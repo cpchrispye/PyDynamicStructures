@@ -1,17 +1,9 @@
 from struct import unpack, pack, calcsize
-from collections import Sequence, Iterable, OrderedDict
-from abc import ABCMeta
+from collections import Sequence, OrderedDict
 
 
 def sizeof(struct):
     return struct.size()
-
-def flatten(items):
-    for x in items:
-        if isinstance(x, Iterable) and not isinstance(x, (str, bytes)):
-            yield flatten(x)
-        else:
-            yield x
 
 class BaseType(object):
     BASEFORMAT   = ''
@@ -34,13 +26,18 @@ class BaseType(object):
         raise AttributeError("Descriptor __delete__ not overridden correctly " + self.__class__.__name__)
 
     def pack(self):
-        return pack(self.BASEENDIAN + self.BASEFORMAT, self.internal_value)
+        try:
+            return pack(self.BASEENDIAN + self.BASEFORMAT, self.internal_value)
+        except Exception as e:
+            raise Exception("pack error class %s, value %s, message: %s" % (self.__class__.__name__, str(self.internal_value), str(e)))
 
     def unpack(self, buffer, offset=0):
         self.__offset = offset
         self.__buffer = buffer
-
-        vals = unpack(self.BASEENDIAN + self.BASEFORMAT, self.__buffer[self.__offset:self.__offset + self.size()])
+        try:
+            vals = unpack(self.BASEENDIAN + self.BASEFORMAT, self.__buffer[self.__offset:self.__offset + self.size()])
+        except Exception as e:
+            raise Exception("unpack error class %s, value %s, message: %s" % (self.__class__.__name__, str(self.internal_value), str(e)))
 
         self.internal_value = vals[0]
 
@@ -72,6 +69,7 @@ class BaseType(object):
     def __rmul__(cls, other):
         return StructureList([cls() for _ in range(int(other))])
 
+
 class EMPTY(BaseType):
     BASEFORMAT = ''
 
@@ -81,111 +79,144 @@ class EMPTY(BaseType):
     def pack(self):
         return bytes()
 
+
 class BigEndian(BaseType):
     BASEENDIAN = '>'
+
 
 class LittleEndian(BaseType):
     BASEENDIAN = '<'
 
+
 class BYTE(BigEndian):
     BASEFORMAT = 'c'
+
 
 class UINT8(BigEndian):
     BASEFORMAT = 'B'
 
+
 class UINT16(BigEndian):
     BASEFORMAT = 'H'
+
 
 class UINT32(BigEndian):
     BASEFORMAT = 'I'
 
+
 class UINT64(BigEndian):
     BASEFORMAT = 'Q'
+
 
 class INT8(BigEndian):
     BASEFORMAT = 'b'
 
+
 class INT16(BigEndian):
     BASEFORMAT = 'h'
+
 
 class INT32(BigEndian):
     BASEFORMAT = 'i'
 
+
 class INT64(BigEndian):
     BASEFORMAT = 'q'
+
 
 class FLOAT(BigEndian):
     BASEFORMAT = 'f'
 
+
 class DOUBLE(BigEndian):
     BASEFORMAT = 'd'
+
 
 class STRING(BigEndian):
     BASEFORMAT = 's'
 
+
 class BYTE_L(LittleEndian):
     BASEFORMAT = 'c'
+
 
 class UINT8_L(LittleEndian):
     BASEFORMAT = 'B'
 
+
 class UINT16_L(LittleEndian):
     BASEFORMAT = 'H'
+
 
 class UINT32_L(LittleEndian):
     BASEFORMAT = 'I'
 
+
 class UINT64_L(LittleEndian):
     BASEFORMAT = 'Q'
+
 
 class INT8_L(LittleEndian):
     BASEFORMAT = 'b'
 
+
 class INT16_L(LittleEndian):
     BASEFORMAT = 'h'
+
 
 class INT32_L(LittleEndian):
     BASEFORMAT = 'i'
 
+
 class INT64_L(LittleEndian):
     BASEFORMAT = 'q'
+
 
 class FLOAT_L(LittleEndian):
     BASEFORMAT = 'f'
 
+
 class DOUBLE_L(LittleEndian):
     BASEFORMAT = 'd'
+
 
 class STRING_L(LittleEndian):
     BASEFORMAT = 's'
 
-class Descriptor():
-    __metaclass__ = ABCMeta
-    REPLACE = True
-
-    def __get__(self, instance, owner):
-        raise AttributeError("Descriptor not overridden correctly " + self.__class__.__name__)
-
-    def __set__(self, instance, value):
-        raise AttributeError("Descriptor not overridden correctly " + self.__class__.__name__)
-
-    def __delete__(self, instance):
-        raise AttributeError("Descriptor not overridden correctly " + self.__class__.__name__)
 
 class DynObject(object):
 
+    """
+    DynObject will treat any (non)descriptor bound to its instance attributes as property
+    this differs from object which only allows for descriptors to be associated to the class not the instance.
+    effort has been made to not use __init__ so that any one inheriting does not need to super()
+    """
+
     def __getattribute__(self, key):
-        "Emulate type_getattro() in Objects/typeobject.c"
+        """
+        If attribute has __get__ method call it and return result
+        :param key:
+        :return: value
+        """
         v = object.__getattribute__(self, key)
         if hasattr(v, '__get__'):
             return v.__get__(self, type(self))
         return v
 
     def __setattr__(self, key, value):
+        """
+
+        :param key:
+        :param value:
+        :return:
+        """
         if key not in self.__dict__:
             # if this is the first time set attribute to the what ever is passed
             object.__setattr__(self, key, value)
         else:
+            # if attribute has __set__ we call its __set__ method unless the value we are setting has a __set__ method
+            # then its likely that the user is trying to replace the descriptor. The user may wish to replace the
+            # descriptor with another obect thats not a descriptor in which case the object should have a REPLACE attribute set to True
             v = self.__dict__[key]
             if (hasattr(v, '__set__')
                     and not (hasattr(value, '__set__')
@@ -196,10 +227,14 @@ class DynObject(object):
                 # set the attribute
                 object.__setattr__(self, key, value)
 
-    def get_descriptors(self):
+    def get_attr_list_with(self, attr='__get__'):
+        """
+        gets a list of attributes with attribute
+        :return: :class:`dict`
+        """
         descriptors = {}
         for key, item in self.__dict__.items():
-            if hasattr(item, '__get__'):
+            if hasattr(item, attr):
                 descriptors[key] = (item)
         return descriptors
 
@@ -212,10 +247,19 @@ class OrderedDynObject(DynObject):
             self._fields[key] = None
         super(OrderedDynObject, self).__setattr__(key, value)
 
-    def get_descriptors(self, attr='__get__'):
+    def __getattr__(self, item):
+        if len(self.__dict__) == 0:
+            self.__dict__['_fields'] = OrderedDict()
+        return super(OrderedDynObject, self).__getattribute__(item)
+
+    def get_attr_list_with(self, attr='__get__'):
+        """
+        gets a list of attributes with attribute
+        :return: :class:`dict`
+        """
         descriptors = OrderedDict()
         for key in self.attributes():
-            if hasattr(self.__dict__[key], attr):
+            if key in self.__dict__ and hasattr(self.__dict__[key], attr):
                 descriptors[key] = self.__dict__[key]
         return descriptors
 
@@ -224,6 +268,8 @@ class OrderedDynObject(DynObject):
 
 
 class Structure(OrderedDynObject):
+    """
+    """
     REPLACE  = True
     _fields_ = []
 
@@ -239,7 +285,7 @@ class Structure(OrderedDynObject):
 
     def pack(self):
         byte_data = bytes()
-        for struct in self.get_descriptors('pack').values():
+        for struct in self.get_attr_list_with('pack').values():
             byte_data += struct.pack()
         return byte_data
 
@@ -247,18 +293,18 @@ class Structure(OrderedDynObject):
         index = 0
         self.__offset = offset
         self.__buffer = buffer
-        for struct in self.get_descriptors('unpack').values():
+        for struct in self.get_attr_list_with('unpack').values():
             index += struct.unpack(buffer, index + offset)
         return index
 
     def update(self):
         index = 0
-        for struct in self.get_descriptors('unpack').values():
+        for struct in self.get_attr_list_with('unpack').values():
             index += struct.unpack(self.__buffer, index + self.__offset)
 
     def size(self):
         size_in_bytes = 0
-        for struct in self.get_descriptors('size').values():
+        for struct in self.get_attr_list_with('size').values():
             size_in_bytes += struct.size()
         return size_in_bytes
 
@@ -272,6 +318,8 @@ class Structure(OrderedDynObject):
         elif isinstance(values, Sequence):
             index = 0
             for key in self.attributes():
+                if index >= len(values):
+                    break
                 if hasattr(self.__getattribute__(key), 'set_values'):
                     index += self.__getattribute__(key).set_values(values[index:])
                 else:
@@ -279,11 +327,13 @@ class Structure(OrderedDynObject):
                     index += 1
             return index
 
-    def add_field(self, name, type, length=None):
+    def add_field(self, name, type_val, length=None):
+        if isinstance(type(type_val), type):
+            type_val = type_val()
         if length is None:
-            self.__setattr__(name, type())
+            self.__setattr__(name, type_val)
         elif length is not None:
-            self.__setattr__(name, type() * length)
+            self.__setattr__(name, type_val * length)
 
     def add_fields(self, fields):
         for field in fields:
@@ -330,10 +380,15 @@ class StructureList(list):
             index += struct.unpack(buffer, index + offset)
         return index
 
-    def update(self):
-        index = 0
-        for struct in self:
-            index += struct.unpack(self.__buffer, index + self.__offset)
+    def update(self, from_buffer=True):
+        if from_buffer:
+            index = 0
+            for struct in self:
+                index += struct.unpack(self.__buffer, index + self.__offset)
+        else:
+            self.__buffer = bytes()
+            for struct in self:
+                self.__buffer += struct.pack()
 
     def size(self):
         size_in_bytes = 0
@@ -350,7 +405,47 @@ class StructureList(list):
         return StructureList([cls() for _ in range(int(other))])
 
 
+class Selector(object):
+    REPLACE  = True
+    _fields_ = []
+
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
+        self.internal_state = None
+
+    def select(self, **kwargs):
+        raise Exception("select method needs defining")
+
+    def __get__(self, instance, owner):
+        return self.internal_state
+
+    def __set__(self, instance, value):
+        raise AttributeError("Cannot set Selector")
+
+    def __delete__(self, instance):
+        pass
+
+    def pack(self):
+        self.internal_state = self.select(**self.kwargs)
+        return self.internal_state.pack()
+
+    def unpack(self, buffer, offset=0):
+        index = 0
+        self.__offset = offset
+        self.__buffer = buffer
+        self.internal_state = self.select(**self.kwargs)
+        index += self.internal_state.unpack(buffer, index + offset)
+        return index
+
+
+
 if __name__ == "__main__":
+
+    class mySelect(Selector):
+
+        def select(self, **kwargs):
+            node = kwargs['length'].length
+            return BYTE.__mul__(node)
 
     class sub(Structure):
         def __init__(self):
@@ -365,21 +460,20 @@ if __name__ == "__main__":
         ]
 
 
-    class EnipHeader(Structure):
-        _fields_ = [
-            ("command", UINT16),
-            ("length", UINT16),
-            ("session_handle", UINT32),
-            ("status", UINT32),
-            ("sender_context", UINT64),
-            ("options", UINT32),
-            ("data", sub, 10),
-        ]
+    class EncapsulationHeader(Structure):
+        def __init__(self):
+            self.command = UINT16()
+            self.length = UINT8()
+            self.session_handle = UINT32()
+            self.status = UINT32()
+            self.sender_context = UINT64()
+            self.options = UINT32()
+            self.data = mySelect(length=self)
 
     data = ''.join(['%02x' % i for i in range(255)])
     header_data = data.decode("hex")
 
-    hd = EnipHeader()
+    hd = EncapsulationHeader()
 
     hd.unpack(header_data)
     d = hd.pack()
