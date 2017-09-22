@@ -1,6 +1,6 @@
 from struct import unpack, pack, calcsize
 from collections import Sequence, OrderedDict
-
+import weakref
 
 def sizeof(struct):
     return struct.size()
@@ -16,20 +16,36 @@ class BaseType(object):
         if value is not None:
             self.internal_value = value
 
-    def __get__(self, instance, owner):
+    def __dget__(self, instance, owner):
         return self.internal_value
 
-    def __set__(self, instance, value):
+    def __dset__(self, instance, value):
         self.internal_value = value
 
-    def __delete__(self, instance):
+    def __ddelete__(self, instance):
         raise AttributeError("Descriptor __delete__ not overridden correctly " + self.__class__.__name__)
+
+    def set_parent(self, parent):
+        self.__parent = weakref.ref(parent)
+
+    def get_parent(self):
+        try:
+            return self.__parent()
+        except AttributeError:
+            return None
+
+    def get_path(self):
+        parent = self.get_parent()
+        if parent is None:
+            return [self]
+        return parent.get_path() + [self]
 
     def pack(self):
         try:
             return pack(self.BASEENDIAN + self.BASEFORMAT, self.internal_value)
         except Exception as e:
-            raise Exception("pack error class %s, value %s, message: %s" % (self.__class__.__name__, str(self.internal_value), str(e)))
+            path = '.'.join([p.__class__.__name__ for p in self.get_path()])
+            raise Exception("pack error class %s, value %s, message: %s" % (path, str(self.internal_value), str(e)))
 
     def unpack(self, buffer, offset=0):
         self.__offset = offset
@@ -37,7 +53,8 @@ class BaseType(object):
         try:
             vals = unpack(self.BASEENDIAN + self.BASEFORMAT, self.__buffer[self.__offset:self.__offset + self.size()])
         except Exception as e:
-            raise Exception("unpack error class %s, value %s, message: %s" % (self.__class__.__name__, str(self.internal_value), str(e)))
+            path = '.'.join([p.__class__.__name__ for p in self.get_path()])
+            raise Exception("unpack error class %s, value %s, message: %s" % (path, str(self.internal_value), str(e)))
 
         self.internal_value = vals[0]
 
@@ -189,7 +206,7 @@ class STRING_L(LittleEndian):
     BASEFORMAT = 's'
 
 
-class DynObject(object):
+class DescriptorObject(object):
 
     """
     DynObject will treat any (non)descriptor bound to its instance attributes as property
@@ -203,7 +220,7 @@ class DynObject(object):
         :param key:
         :return: value
         """
-        getter = '__get__'
+        getter = '__dget__'
         v = object.__getattribute__(self, key)
         if hasattr(v, getter):
             return getattr(v, getter)(self, type(self))
@@ -216,7 +233,7 @@ class DynObject(object):
         :param value:
         :return:
         """
-        setter = '__set__'
+        setter = '__dset__'
         try:
             v = self.__dict__[key]
         except KeyError:
@@ -230,13 +247,52 @@ class DynObject(object):
             and not (hasattr(value, setter)
                      or (hasattr(value, 'REPLACE') and value.REPLACE == True))):
             # set the property
-            setattr(v, setter, value)
+            getattr(v, setter)(self, value)
         else:
             # set the attribute
             object.__setattr__(self, key, value)
 
 
-class OrderedDynObject(DynObject):
+class DescriptorList(list):
+    REPLACE = True
+
+    def __getitem__(self, key):
+        """
+        :param key:
+        :return: value
+        """
+        getter = '__dget__'
+        v = list.__getitem__(self, key)
+        if hasattr(v, getter):
+            return getattr(v, getter)(self, type(self))
+        return v
+
+    def __setitem__(self, key, value):
+        """
+        :param key:
+        :param value:
+        :return:
+        """
+        setter = '__dset__'
+        try:
+            v = list.__getitem__(self, key)
+        except KeyError:
+            return super(list, self).__setitem__(key, value)
+
+        # if attribute has __set__ we call its __set__ method unless the value we are setting has a __set__ method
+        # then its likely that the user is trying to replace the descriptor. The user may wish to replace the
+        # descriptor with another object thats not a descriptor in which case the object should have a REPLACE attribute set to True
+        if (hasattr(v, setter)
+            and not (hasattr(value, setter)
+                     or (hasattr(value, 'REPLACE') and value.REPLACE == True))):
+            # set the property
+            setattr(v, setter, value)
+        else:
+            # set the attribute
+            return super(list, self).__setitem__(key, value)
+
+
+class OrderedDescriptorObject(DescriptorObject):
 
     def __setattr__(self, key, value):
         try:
@@ -247,14 +303,14 @@ class OrderedDynObject(DynObject):
 
         if key not in fields:
             fields[key] = None
-        super(OrderedDynObject, self).__setattr__(key, value)
+        super(OrderedDescriptorObject, self).__setattr__(key, value)
 
     def __getattr__(self, item):
         if item == '_fields':
             fields = OrderedDict()
             self.__dict__['_fields'] = fields
             return fields
-        return super(OrderedDynObject, self).__getattribute__(item)
+        return super(OrderedDescriptorObject, self).__getattribute__(item)
 
     def attributes(self):
         return self._fields.keys()
@@ -275,7 +331,7 @@ def get_attributes_with(ordered_dyn_object, has_attribute):
             out[attr_name] = attr
     return out
 
-class Structure(OrderedDynObject):
+class Structure(OrderedDescriptorObject):
     """
     """
     REPLACE  = True
@@ -290,6 +346,26 @@ class Structure(OrderedDynObject):
         if len(values):
             new_instance.set_values(values)
         return new_instance
+
+    def __setattr__(self, key, value):
+        super(Structure, self).__setattr__(key, value)
+        if hasattr(value, 'set_parent') and key != '_parent':
+            value.set_parent(self)
+
+    def set_parent(self, parent):
+        self._parent = weakref.ref(parent)
+
+    def get_parent(self):
+        try:
+            return self._parent()
+        except AttributeError:
+            return None
+
+    def get_path(self):
+        parent = self.get_parent()
+        if parent is None:
+            return [self]
+        return parent.get_path() + [self]
 
     def pack(self):
         byte_data = bytes()
@@ -367,45 +443,28 @@ class Structure(OrderedDynObject):
         return StructureList([cls() for _ in range(int(other))])
 
 
-class StructureList(list):
+class StructureList(DescriptorList):
     REPLACE = True
 
-
-    def __getitem__(self, key):
-        """
-        :param key:
-        :return: value
-        """
-        getter = '__get__'
-        v = list.__getitem__(self, key)
-        if hasattr(v, getter):
-            return getattr(v, getter)(self, type(self))
-        return v
-
     def __setitem__(self, key, value):
-        """
+        super(Structure, self).__setitem__(key, value)
+        if hasattr(value, 'set_parent'):
+            value.set_parent(self)
 
-        :param key:
-        :param value:
-        :return:
-        """
-        setter = '__set__'
+    def set_parent(self, parent):
+        self.__parent = weakref.ref(parent)
+
+    def get_parent(self):
         try:
-            v = list.__getitem__(self, key)
-        except KeyError:
-            return super(list, self).__setitem__(key, value)
+            return self.__parent()
+        except AttributeError:
+            return None
 
-        # if attribute has __set__ we call its __set__ method unless the value we are setting has a __set__ method
-        # then its likely that the user is trying to replace the descriptor. The user may wish to replace the
-        # descriptor with another obect thats not a descriptor in which case the object should have a REPLACE attribute set to True
-        if (hasattr(v, setter)
-            and not (hasattr(value, setter)
-                     or (hasattr(value, 'REPLACE') and value.REPLACE == True))):
-            # set the property
-            setattr(v, setter, value)
-        else:
-            # set the attribute
-            return super(list, self).__setitem__(key, value)
+    def get_path(self):
+        parent = self.get_parent()
+        if parent is None:
+            return [self]
+        return parent.get_path() + [self]
 
     def pack(self):
         byte_data = bytes()
@@ -457,14 +516,47 @@ class Selector(object):
     def select(self, **kwargs):
         raise Exception("select method needs defining")
 
-    def __get__(self, instance, owner):
+    def __dget__(self, instance, owner):
         return self.internal_state
 
-    def __set__(self, instance, value):
+    def __dset__(self, instance, value):
         raise AttributeError("Cannot set Selector")
 
-    def __delete__(self, instance):
+    def __ddelete__(self, instance):
         pass
+
+    def set_parent(self, parent):
+        self.__parent = weakref.ref(parent)
+
+    def get_parent(self):
+        try:
+            return self.__parent()
+        except AttributeError:
+            return None
+
+    def get_path(self):
+        parent = self.get_parent()
+        if parent is None:
+            return [self]
+        return parent.get_path() + [self]
+
+    def get_variable(self, path):
+        if path[0] == '.':
+            path = path[1:]
+        attr_names = path.split('.')
+        root = self.get_path()[0]
+        try:
+            this_dir = root
+            for attr_name in attr_names:
+                this_dir = getattr(this_dir, attr_name)
+        except AttributeError as e:
+            raise AttributeError("Cannot find dir %s %s: message %s" % (attr_name, path, str(e)))
+        return this_dir
+
+    def update(self, from_buffer=True):
+        if self.internal_state is None:
+            raise Exception("Selector needs to be initialized call unpack() on it")
+        return self.internal_state.update(from_buffer)
 
     def pack(self):
         if self.internal_state is None:
@@ -483,11 +575,11 @@ class Selector(object):
 
 if __name__ == "__main__":
 
-    class mySelect(Selector):
+    class DynamicArray(Selector):
 
         def select(self, **kwargs):
-            node = kwargs['length'].length
-            return BYTE.__mul__(node)
+            size = self.get_variable(kwargs['length'])
+            return BYTE.__mul__(size)
 
     class sub(Structure):
         def __init__(self):
@@ -510,7 +602,7 @@ if __name__ == "__main__":
             self.status = UINT32()
             self.sender_context = UINT64()
             self.options = UINT32()
-            self.data = mySelect(length=self)
+            self.data = DynamicArray(length='.length')
 
     data = ''.join(['%02x' % i for i in range(255)])
     header_data = data.decode("hex")
@@ -523,6 +615,7 @@ if __name__ == "__main__":
     print(data)
     alt_struct = sub_alt(3, 5)
     hd.options = alt_struct
+    hd.update()
     hd.update()
     print(hd.options.pack().encode("hex"))
     print(data)
