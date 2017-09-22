@@ -76,11 +76,11 @@ class BaseType(object):
         return str(self.internal_value)
 
     def __repr__(self):
-        return self.__class__.__name__ + ": " +  str(self.internal_value)
+        return self.__class__.__name__ + ": " + str(self.internal_value)
 
     @classmethod
     def __mul__(cls, other):
-        return StructureList([cls() for _  in range(int(other))])
+        return StructureList([cls() for _ in range(int(other))])
 
     @classmethod
     def __rmul__(cls, other):
@@ -286,7 +286,7 @@ class DescriptorList(list):
             and not (hasattr(value, setter)
                      or (hasattr(value, 'REPLACE') and value.REPLACE == True))):
             # set the property
-            setattr(v, setter, value)
+            getattr(v, setter)(self, value)
         else:
             # set the attribute
             return super(list, self).__setitem__(key, value)
@@ -387,13 +387,11 @@ class StructureBase(OrderedDescriptorObject):
             out += struct.get_format()
         return out
 
+    def __mul__(self, other):
+        return StructureList([self() for _ in range(int(other))])
 
-    def __mul__(cls, other):
-        return StructureList([cls() for _ in range(int(other))])
-
-
-    def __rmul__(cls, other):
-        return StructureList([cls() for _ in range(int(other))])
+    def __rmul__(self, other):
+        return StructureList([self() for _ in range(int(other))])
 
 
 class Structure(StructureBase):
@@ -405,6 +403,11 @@ class Structure(StructureBase):
     def __new__(cls, *args, **kwargs):
         new_instance = super(Structure, cls).__new__(cls)
         new_instance.add_fields(cls._fields_)
+        return new_instance
+
+    @classmethod
+    def build_with_values(cls, *args, **kwargs):
+        new_instance = cls()
         values = list(args)
         if len(values) == 0:
             values = dict(kwargs)
@@ -432,12 +435,11 @@ class Structure(StructureBase):
 
         elif isinstance(values, Sequence):
             index = 0
-            for key in self.attributes():
+            for key, val in self.get_structure_items().items():
                 if index >= len(values):
                     break
-                attr = getattr(self, key)
-                if hasattr(attr, 'set_values'):
-                    index += attr.set_values(values[index:])
+                if hasattr(val, 'set_values'):
+                    index += val.set_values(values[index:])
                 else:
                     setattr(self, key, values[index])
                     index += 1
@@ -468,9 +470,21 @@ class StructureList(DescriptorList, StructureBase):
     REPLACE = True
 
     def __setitem__(self, key, value):
-        super(Structure, self).__setitem__(key, value)
+        DescriptorList.__setitem__(self, key, value)
         if hasattr(value, 'set_parent'):
             value.set_parent(self)
+
+    def set_values(self, values):
+        index = 0
+        for key, val in self.get_structure_items().items():
+            if index >= len(values):
+                break
+            if hasattr(val, 'set_values'):
+                index += val.set_values(values[index:])
+            else:
+                self[key] = values[index]
+                index += 1
+        return index
 
     def get_structure_items(self, with_attr=None):
         with_attr = 'pack' if with_attr is None else with_attr
@@ -496,6 +510,10 @@ class Selector(StructureBase):
 
     def __ddelete__(self, instance):
         pass
+
+    def set_values(self, values):
+        self.update_selectors()
+        return self.internal_state.set_values(values)
 
     def get_structure_items(self, with_attr=None):
         raise Exception(".get_structure_items() called on Selector this should not occur")
@@ -575,7 +593,7 @@ if __name__ == "__main__":
     data = ''.join(['%02x' % i for i in range(255)])
     header_data = data.decode("hex")
 
-    hd = EncapsulationHeader()
+    hd = EncapsulationHeader.build_with_values(0,5,2,3,4,5,6,7,8,9,10,11,12,13,14)
 
     hd.unpack(header_data)
     d = hd.pack()
