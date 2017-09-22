@@ -381,11 +381,17 @@ class StructureBase(OrderedDescriptorObject):
             size_in_bytes += struct.size()
         return size_in_bytes
 
-    @classmethod
+    def get_format(self):
+        out = []
+        for struct in self.get_structure_items().values():
+            out += struct.get_format()
+        return out
+
+
     def __mul__(cls, other):
         return StructureList([cls() for _ in range(int(other))])
 
-    @classmethod
+
     def __rmul__(cls, other):
         return StructureList([cls() for _ in range(int(other))])
 
@@ -528,7 +534,11 @@ class Selector(StructureBase):
         index += self.internal_state.unpack(buffer, index + offset)
         return index
 
-
+    def get_format(self):
+        out = []
+        for struct in self.internal_state.get_structure_items().values():
+            out += struct.get_format()
+        return out
 
 if __name__ == "__main__":
 
@@ -536,8 +546,8 @@ if __name__ == "__main__":
 
         def select(self, **kwargs):
             size     = self.get_variable(kwargs['length'])
-            str_type = kwargs['type']
-            return str_type.__mul__(size)
+            str_type = kwargs['type']()
+            return str_type * size
 
     class sub(Structure):
         def __init__(self):
@@ -576,7 +586,7 @@ if __name__ == "__main__":
     hd.update()
     hd.length = 10
     hd.update_selectors()
-    print(hd.options.pack().encode("hex"))
+    print(hd.get_format())
     hd.options.f = 0
     d = hd.pack()
     print(data)
