@@ -1,2 +1,2 @@
-from PyDynamicStructures.dynamic_structure import Structure, StructureList, UINT8, UINT16, UINT32, UINT64, \
+from PyDynamicStructures.dynamic_structure import Structure, StructureList, Selector, UINT8, UINT16, UINT32, UINT64, \
     UINT8_L, UINT16_L, UINT32_L, UINT64_L, DOUBLE, DOUBLE_L, FLOAT, FLOAT_L, BYTE, BYTE_L, EMPTY, STRING

@@ -331,7 +331,66 @@ def get_attributes_with(ordered_dyn_object, has_attribute):
             out[attr_name] = attr
     return out
 
-class Structure(OrderedDescriptorObject):
+
+class StructureBase(OrderedDescriptorObject):
+
+    def get_structure_items(self, with_attr=None):
+        raise Exception("get_structure_items ned defining")
+
+    def set_parent(self, parent):
+        self._parent = weakref.ref(parent)
+
+    def get_parent(self):
+        try:
+            return self._parent()
+        except AttributeError:
+            return None
+
+    def get_path(self):
+        parent = self.get_parent()
+        if parent is None:
+            return [self]
+        return parent.get_path() + [self]
+
+    def update(self):
+        index = 0
+        for struct in self.get_structure_items('unpack').values():
+            index += struct.unpack(self._buffer, index + self._offset)
+
+    def update_selectors(self):
+        for struct in self.get_structure_items('update_selectors').values():
+            struct.update_selectors()
+
+    def pack(self):
+        byte_data = bytes()
+        for struct in self.get_structure_items('pack').values():
+            byte_data += struct.pack()
+        return byte_data
+
+    def unpack(self, buffer, offset=0):
+        index = 0
+        self._offset = offset
+        self._buffer = buffer
+        for struct in self.get_structure_items('unpack').values():
+            index += struct.unpack(buffer, index + offset)
+        return index
+
+    def size(self):
+        size_in_bytes = 0
+        for struct in self.get_structure_items('size').values():
+            size_in_bytes += struct.size()
+        return size_in_bytes
+
+    @classmethod
+    def __mul__(cls, other):
+        return StructureList([cls() for _ in range(int(other))])
+
+    @classmethod
+    def __rmul__(cls, other):
+        return StructureList([cls() for _ in range(int(other))])
+
+
+class Structure(StructureBase):
     """
     """
     REPLACE  = True
@@ -352,45 +411,9 @@ class Structure(OrderedDescriptorObject):
         if hasattr(value, 'set_parent') and key != '_parent':
             value.set_parent(self)
 
-    def set_parent(self, parent):
-        self._parent = weakref.ref(parent)
-
-    def get_parent(self):
-        try:
-            return self._parent()
-        except AttributeError:
-            return None
-
-    def get_path(self):
-        parent = self.get_parent()
-        if parent is None:
-            return [self]
-        return parent.get_path() + [self]
-
-    def pack(self):
-        byte_data = bytes()
-        for struct in get_attributes_with(self, 'pack').values():
-            byte_data += struct.pack()
-        return byte_data
-
-    def unpack(self, buffer, offset=0):
-        index = 0
-        self.__offset = offset
-        self.__buffer = buffer
-        for struct in get_attributes_with(self, 'unpack').values():
-            index += struct.unpack(buffer, index + offset)
-        return index
-
-    def update(self):
-        index = 0
-        for struct in get_attributes_with(self, 'unpack').values():
-            index += struct.unpack(self.__buffer, index + self.__offset)
-
-    def size(self):
-        size_in_bytes = 0
-        for struct in get_attributes_with(self, 'size').values():
-            size_in_bytes += struct.size()
-        return size_in_bytes
+    def get_structure_items(self, with_attr=None):
+        with_attr =  'pack' if with_attr is None else with_attr
+        return get_attributes_with(self, with_attr)
 
     def set_values(self, values):
         if isinstance(values, dict):
@@ -434,16 +457,8 @@ class Structure(OrderedDescriptorObject):
                 raise Exception("_fields_ takes 2 or 3 colomns")
             self.add_field(name, type, length)
 
-    @classmethod
-    def __mul__(cls, other):
-        return StructureList([cls() for _ in range(int(other))])
 
-    @classmethod
-    def __rmul__(cls, other):
-        return StructureList([cls() for _ in range(int(other))])
-
-
-class StructureList(DescriptorList):
+class StructureList(DescriptorList, StructureBase):
     REPLACE = True
 
     def __setitem__(self, key, value):
@@ -451,61 +466,12 @@ class StructureList(DescriptorList):
         if hasattr(value, 'set_parent'):
             value.set_parent(self)
 
-    def set_parent(self, parent):
-        self.__parent = weakref.ref(parent)
-
-    def get_parent(self):
-        try:
-            return self.__parent()
-        except AttributeError:
-            return None
-
-    def get_path(self):
-        parent = self.get_parent()
-        if parent is None:
-            return [self]
-        return parent.get_path() + [self]
-
-    def pack(self):
-        byte_data = bytes()
-        for struct in self:
-            byte_data += struct.pack()
-        return byte_data
-
-    def unpack(self, buffer, offset=0):
-        index = 0
-        self.__offset = offset
-        self.__buffer = buffer
-        for struct in self:
-            index += struct.unpack(buffer, index + offset)
-        return index
-
-    def update(self, from_buffer=True):
-        if from_buffer:
-            index = 0
-            for struct in self:
-                index += struct.unpack(self.__buffer, index + self.__offset)
-        else:
-            self.__buffer = bytes()
-            for struct in self:
-                self.__buffer += struct.pack()
-
-    def size(self):
-        size_in_bytes = 0
-        for struct in self:
-            size_in_bytes += struct.size()
-        return size_in_bytes
-
-    @classmethod
-    def __mul__(cls, other):
-        return StructureList([cls() for _ in range(int(other))])
-
-    @classmethod
-    def __rmul__(cls, other):
-        return StructureList([cls() for _ in range(int(other))])
+    def get_structure_items(self, with_attr=None):
+        with_attr = 'pack' if with_attr is None else with_attr
+        return OrderedDict([(k, val) for k, val in enumerate(self) if hasattr(val, with_attr)])
 
 
-class Selector(object):
+class Selector(StructureBase):
     REPLACE  = True
     _fields_ = []
 
@@ -525,20 +491,8 @@ class Selector(object):
     def __ddelete__(self, instance):
         pass
 
-    def set_parent(self, parent):
-        self.__parent = weakref.ref(parent)
-
-    def get_parent(self):
-        try:
-            return self.__parent()
-        except AttributeError:
-            return None
-
-    def get_path(self):
-        parent = self.get_parent()
-        if parent is None:
-            return [self]
-        return parent.get_path() + [self]
+    def get_structure_items(self, with_attr=None):
+        raise Exception(".get_structure_items() called on Selector this should not occur")
 
     def get_variable(self, path):
         if path[0] == '.':
@@ -553,10 +507,13 @@ class Selector(object):
             raise AttributeError("Cannot find dir %s %s: message %s" % (attr_name, path, str(e)))
         return this_dir
 
-    def update(self, from_buffer=True):
+    def update(self):
         if self.internal_state is None:
             raise Exception("Selector needs to be initialized call unpack() on it")
-        return self.internal_state.update(from_buffer)
+        return self.internal_state.update(self._buffer)
+
+    def update_selectors(self):
+        self.internal_state = self.select(**self.kwargs)
 
     def pack(self):
         if self.internal_state is None:
@@ -565,8 +522,8 @@ class Selector(object):
 
     def unpack(self, buffer, offset=0):
         index = 0
-        self.__offset = offset
-        self.__buffer = buffer
+        self._offset = offset
+        self._buffer = buffer
         self.internal_state = self.select(**self.kwargs)
         index += self.internal_state.unpack(buffer, index + offset)
         return index
@@ -578,8 +535,9 @@ if __name__ == "__main__":
     class DynamicArray(Selector):
 
         def select(self, **kwargs):
-            size = self.get_variable(kwargs['length'])
-            return BYTE.__mul__(size)
+            size     = self.get_variable(kwargs['length'])
+            str_type = kwargs['type']
+            return str_type.__mul__(size)
 
     class sub(Structure):
         def __init__(self):
@@ -602,7 +560,7 @@ if __name__ == "__main__":
             self.status = UINT32()
             self.sender_context = UINT64()
             self.options = UINT32()
-            self.data = DynamicArray(length='.length')
+            self.data = DynamicArray(length='.length', type=UINT8 )
 
     data = ''.join(['%02x' % i for i in range(255)])
     header_data = data.decode("hex")
@@ -616,11 +574,14 @@ if __name__ == "__main__":
     alt_struct = sub_alt(3, 5)
     hd.options = alt_struct
     hd.update()
-    hd.update()
+    hd.length = 10
+    hd.update_selectors()
     print(hd.options.pack().encode("hex"))
+    hd.options.f = 0
+    d = hd.pack()
     print(data)
     print(d.encode("hex"))
-    print(hd.data[5].a)
+
     i=1
 
 
