@@ -1,341 +1,63 @@
-from struct import unpack, pack, calcsize
+from PyDynamicStructures.base_types import *
 from collections import Sequence, OrderedDict
 import weakref
+
+__all__ = ['Structure', 'StructureList', 'Selector', 'sizeof']
+
+SETTER = '__dset__'
+GETTER = '__dget__'
 
 def sizeof(struct):
     return struct.size()
 
-class BaseType(object):
-    BASEFORMAT   = ''
-    BASEENDIAN   = '<'
-    DEFAULTVALUE = 0
-    REPLACE      = True
+def get_descriptor(key, self, getter, supered_method):
+    v = supered_method(key)
+    if hasattr(v, getter):
+        return getattr(v, getter)(self, type(self))
+    return v
 
-    def __init__(self, value=None):
-        self.internal_value = self.DEFAULTVALUE
-        if value is not None:
-            self.internal_value = value
-
-    def __dget__(self, instance, owner):
-        return self.internal_value
-
-    def __dset__(self, instance, value):
-        self.internal_value = value
-
-    def __ddelete__(self, instance):
-        raise AttributeError("Descriptor __delete__ not overridden correctly " + self.__class__.__name__)
-
-    def set_parent(self, parent):
-        self.__parent = weakref.ref(parent)
-
-    def get_parent(self):
+def set_descriptor(key, value, self, setter, supered_method, order=False):
+    if order:
         try:
-            return self.__parent()
-        except AttributeError:
-            return None
-
-    def get_path(self):
-        parent = self.get_parent()
-        if parent is None:
-            return [self]
-        return parent.get_path() + [self]
-
-    def pack(self):
-        try:
-            return pack(self.BASEENDIAN + self.BASEFORMAT, self.internal_value)
-        except Exception as e:
-            path = '.'.join([p.__class__.__name__ for p in self.get_path()])
-            raise Exception("pack error class %s, value %s, message: %s" % (path, str(self.internal_value), str(e)))
-
-    def unpack(self, buffer, offset=0):
-        self.__offset = offset
-        self.__buffer = buffer
-        try:
-            vals = unpack(self.BASEENDIAN + self.BASEFORMAT, self.__buffer[self.__offset:self.__offset + self.size()])
-        except Exception as e:
-            path = '.'.join([p.__class__.__name__ for p in self.get_path()])
-            raise Exception("unpack error class %s, value %s, message: %s" % (path, str(self.internal_value), str(e)))
-
-        self.internal_value = vals[0]
-
-        return self.size()
-
-    def update(self):
-        vals = unpack(self.BASEENDIAN + self.BASEFORMAT, self.__buffer[self.__offset:self.__offset + self.size()])
-        self.internal_value = vals[0]
-
-    @classmethod
-    def get_format(cls):
-        return [cls.BASEFORMAT]
-
-    @classmethod
-    def size(cls):
-        return calcsize(cls.BASEENDIAN + cls.BASEFORMAT)
-
-    def __str__(self):
-        return str(self.internal_value)
-
-    def __repr__(self):
-        return self.__class__.__name__ + ": " + str(self.internal_value)
-
-    @classmethod
-    def __mul__(cls, other):
-        return StructureList([cls() for _ in range(int(other))])
-
-    @classmethod
-    def __rmul__(cls, other):
-        return StructureList([cls() for _ in range(int(other))])
-
-
-class EMPTY(BaseType):
-    BASEFORMAT = ''
-
-    def unpack(self, buffer, offset=0):
-        return 0
-
-    def pack(self):
-        return bytes()
-
-
-class BigEndian(BaseType):
-    BASEENDIAN = '>'
-
-
-class LittleEndian(BaseType):
-    BASEENDIAN = '<'
-
-
-class BYTE(BigEndian):
-    BASEFORMAT = 'c'
-    DEFAULTVALUE = '\0'
-
-    def __repr__(self):
-        return self.__class__.__name__ + ": 0x" +  self.internal_value.encode("hex")
-
-
-class UINT8(BigEndian):
-    BASEFORMAT = 'B'
-
-
-class UINT16(BigEndian):
-    BASEFORMAT = 'H'
-
-
-class UINT32(BigEndian):
-    BASEFORMAT = 'I'
-
-
-class UINT64(BigEndian):
-    BASEFORMAT = 'Q'
-
-
-class INT8(BigEndian):
-    BASEFORMAT = 'b'
-
-
-class INT16(BigEndian):
-    BASEFORMAT = 'h'
-
-
-class INT32(BigEndian):
-    BASEFORMAT = 'i'
-
-
-class INT64(BigEndian):
-    BASEFORMAT = 'q'
-
-
-class FLOAT(BigEndian):
-    BASEFORMAT = 'f'
-
-
-class DOUBLE(BigEndian):
-    BASEFORMAT = 'd'
-
-
-class STRING(BigEndian):
-    BASEFORMAT = 's'
-
-
-class BYTE_L(LittleEndian):
-    BASEFORMAT = 'c'
-    DEFAULTVALUE = '\0'
-
-
-class UINT8_L(LittleEndian):
-    BASEFORMAT = 'B'
-
-
-class UINT16_L(LittleEndian):
-    BASEFORMAT = 'H'
-
-
-class UINT32_L(LittleEndian):
-    BASEFORMAT = 'I'
-
-
-class UINT64_L(LittleEndian):
-    BASEFORMAT = 'Q'
-
-
-class INT8_L(LittleEndian):
-    BASEFORMAT = 'b'
-
-
-class INT16_L(LittleEndian):
-    BASEFORMAT = 'h'
-
-
-class INT32_L(LittleEndian):
-    BASEFORMAT = 'i'
-
-
-class INT64_L(LittleEndian):
-    BASEFORMAT = 'q'
-
-
-class FLOAT_L(LittleEndian):
-    BASEFORMAT = 'f'
-
-
-class DOUBLE_L(LittleEndian):
-    BASEFORMAT = 'd'
-
-
-class STRING_L(LittleEndian):
-    BASEFORMAT = 's'
-
-
-class DescriptorObject(object):
-
-    """
-    DynObject will treat any (non)descriptor bound to its instance attributes as property
-    this differs from object which only allows for descriptors to be associated to the class not the instance.
-    effort has been made to not use __init__ so that any one inheriting does not need to super()
-    """
-
-    def __getattribute__(self, key):
-        """
-        If attribute has __get__ method call it and return result
-        :param key:
-        :return: value
-        """
-        getter = '__dget__'
-        v = object.__getattribute__(self, key)
-        if hasattr(v, getter):
-            return getattr(v, getter)(self, type(self))
-        return v
-
-    def __setattr__(self, key, value):
-        """
-
-        :param key:
-        :param value:
-        :return:
-        """
-        setter = '__dset__'
-        try:
-            v = self.__dict__[key]
-        except KeyError:
-            object.__setattr__(self, key, value)
-            return None
-
-        # if attribute has __set__ we call its __set__ method unless the value we are setting has a __set__ method
-        # then its likely that the user is trying to replace the descriptor. The user may wish to replace the
-        # descriptor with another obect thats not a descriptor in which case the object should have a REPLACE attribute set to True
-        if (hasattr(v, setter)
-            and not (hasattr(value, setter)
-                     or (hasattr(value, 'REPLACE') and value.REPLACE == True))):
-            # set the property
-            getattr(v, setter)(self, value)
-        else:
-            # set the attribute
-            object.__setattr__(self, key, value)
-
-
-class DescriptorList(list):
-    REPLACE = True
-
-    def __getitem__(self, key):
-        """
-        :param key:
-        :return: value
-        """
-        getter = '__dget__'
-        v = list.__getitem__(self, key)
-        if hasattr(v, getter):
-            return getattr(v, getter)(self, type(self))
-        return v
-
-    def __setitem__(self, key, value):
-        """
-        :param key:
-        :param value:
-        :return:
-        """
-        setter = '__dset__'
-        try:
-            v = list.__getitem__(self, key)
-        except KeyError:
-            return super(list, self).__setitem__(key, value)
-
-        # if attribute has __set__ we call its __set__ method unless the value we are setting has a __set__ method
-        # then its likely that the user is trying to replace the descriptor. The user may wish to replace the
-        # descriptor with another object thats not a descriptor in which case the object should have a REPLACE attribute set to True
-        if (hasattr(v, setter)
-            and not (hasattr(value, setter)
-                     or (hasattr(value, 'REPLACE') and value.REPLACE == True))):
-            # set the property
-            getattr(v, setter)(self, value)
-        else:
-            # set the attribute
-            return super(list, self).__setitem__(key, value)
-
-
-class OrderedDescriptorObject(DescriptorObject):
-
-    def __setattr__(self, key, value):
-        try:
-            fields = self.__dict__['_fields']
-        except KeyError:
-            fields = OrderedDict()
-            self.__dict__['_fields'] = fields
-
-        if key not in fields:
-            fields[key] = None
-        super(OrderedDescriptorObject, self).__setattr__(key, value)
-
-    def __getattr__(self, item):
-        if item == '_fields':
-            fields = OrderedDict()
-            self.__dict__['_fields'] = fields
-            return fields
-        return super(OrderedDescriptorObject, self).__getattribute__(item)
-
-    def attributes(self):
-        return self._fields.keys()
-
-
-def get_dict_attr(obj, attr):
-    for obj in [obj] + obj.__class__.mro():
-        if attr in obj.__dict__:
-            return obj.__dict__[attr]
-    raise AttributeError
-
-
-def get_attributes_with(ordered_dyn_object, has_attribute):
-    out = OrderedDict()
-    for attr_name in ordered_dyn_object.attributes():
-        attr = get_dict_attr(ordered_dyn_object, attr_name)
-        if hasattr(attr, has_attribute):
-            out[attr_name] = attr
-    return out
-
-
-class StructureBase(OrderedDescriptorObject):
+            self._fields[key] = None
+        except Exception:
+            object.__setattr__(self, '_fields', OrderedDict())
+            self._fields[key] = None
+
+    try:
+        v = self.get_item(key)
+    except Exception:
+        if hasattr(value, 'set_parent'):
+            value.set_parent(self)
+        return supered_method(key, value)
+
+    # if attribute has __set__ we call its __set__ method unless the value we are setting has a __set__ method
+    # then its likely that the user is trying to replace the descriptor. The user may wish to replace the
+    # descriptor with another object thats not a descriptor in which case the object should have a REPLACE attribute set to True
+    if (hasattr(v, setter)
+        and not (hasattr(value, setter)
+                 or (hasattr(value, 'REPLACE') and value.REPLACE == True))):
+        # set the property
+        getattr(v, setter)(self, value)
+    else:
+        # set the attribute
+        return supered_method(key, value)
+
+
+class StructureBase(object):
 
     def get_structure_items(self, with_attr=None):
-        raise Exception("get_structure_items ned defining")
+        print("not here")
+        raise Exception("get_structure_items needs defining")
+
+    def get_item(self, key):
+        raise Exception("get_items needs defining")
+
+    def set_item(self, key, value):
+        raise Exception("get_items needs defining")
+
+    def get_attributes(self):
+        raise Exception("get_items needs defining")
 
     def set_parent(self, parent):
         self._parent = weakref.ref(parent)
@@ -387,6 +109,31 @@ class StructureBase(OrderedDescriptorObject):
             out += struct.get_format()
         return out
 
+    def get_structure_items(self, with_attr=None):
+        with_attr = 'pack' if with_attr is None else with_attr
+        out = OrderedDict()
+        for name in self.get_attributes():
+            value = self.get_item(name)
+            if hasattr(value, with_attr):
+                out[name] = value
+        return out
+
+    def set_values(self, value):
+        index = 0
+        for k, v in self.get_structure_items('set_values').items():
+            if index >= len(value):
+                break
+            key = index
+            if isinstance(value, dict):
+                key = k
+
+            if isinstance(value[key], (Sequence, dict)):
+                v.set_values(value[key])
+                index += 1
+            else:
+                index += v.set_values(value[key:])
+        return index
+
     def __mul__(self, other):
         return StructureList([self() for _ in range(int(other))])
 
@@ -415,35 +162,20 @@ class Structure(StructureBase):
             new_instance.set_values(values)
         return new_instance
 
+    def get_item(self, key):
+        return object.__getattribute__(self, key)
+
+    def __getattribute__(self, key):
+        return get_descriptor(key, self, GETTER, super(Structure, self).__getattribute__)
+
+    def set_item(self, key, value):
+        object.__setattr__(self, key, value)
+
     def __setattr__(self, key, value):
-        super(Structure, self).__setattr__(key, value)
-        if hasattr(value, 'set_parent') and key != '_parent':
-            value.set_parent(self)
+        set_descriptor(key, value, self, SETTER, super(Structure, self).__setattr__, True)
 
-    def get_structure_items(self, with_attr=None):
-        with_attr =  'pack' if with_attr is None else with_attr
-        return get_attributes_with(self, with_attr)
-
-    def set_values(self, values):
-        if isinstance(values, dict):
-            for key, val in values.items():
-                attr = getattr(self, key)
-                if hasattr(attr, 'set_values'):
-                    attr.set_values(val)
-                else:
-                    setattr(self, key, val)
-
-        elif isinstance(values, Sequence):
-            index = 0
-            for key, val in self.get_structure_items().items():
-                if index >= len(values):
-                    break
-                if hasattr(val, 'set_values'):
-                    index += val.set_values(values[index:])
-                else:
-                    setattr(self, key, values[index])
-                    index += 1
-            return index
+    def get_attributes(self):
+        return self._fields.keys()
 
     def add_field(self, name, type_val, length=None):
         if isinstance(type(type_val), type):
@@ -466,29 +198,24 @@ class Structure(StructureBase):
             self.add_field(name, type, length)
 
 
-class StructureList(DescriptorList, StructureBase):
+class StructureList(list, StructureBase):
     REPLACE = True
 
+    def get_item(self, key):
+        return list.__getitem__(self, key)
+
+    def __getitem__(self, key):
+        return get_descriptor(key, self,  GETTER, super(StructureList, self).__getitem__)
+
+    def set_item(self, key, value):
+        list.__setitem__(self, key, value)
+
     def __setitem__(self, key, value):
-        DescriptorList.__setitem__(self, key, value)
-        if hasattr(value, 'set_parent'):
-            value.set_parent(self)
+        set_descriptor(key, value, self, SETTER, super(StructureList, self).__setitem__)
 
-    def set_values(self, values):
-        index = 0
-        for key, val in self.get_structure_items().items():
-            if index >= len(values):
-                break
-            if hasattr(val, 'set_values'):
-                index += val.set_values(values[index:])
-            else:
-                self[key] = values[index]
-                index += 1
-        return index
+    def get_attributes(self):
+        return range(len(self))
 
-    def get_structure_items(self, with_attr=None):
-        with_attr = 'pack' if with_attr is None else with_attr
-        return OrderedDict([(k, val) for k, val in enumerate(self) if hasattr(val, with_attr)])
 
 
 class Selector(StructureBase):
@@ -588,7 +315,7 @@ if __name__ == "__main__":
             self.status = UINT32()
             self.sender_context = UINT64()
             self.options = UINT32()
-            self.data = DynamicArray(length='.length', type=UINT8 )
+            self.data = DynamicArray(length='length', type=UINT8)
 
     data = ''.join(['%02x' % i for i in range(255)])
     header_data = data.decode("hex")
@@ -596,6 +323,7 @@ if __name__ == "__main__":
     hd = EncapsulationHeader.build_with_values(0,5,2,3,4,5,6,7,8,9,10,11,12,13,14)
 
     hd.unpack(header_data)
+    v = hd.command
     d = hd.pack()
     print(d.encode('hex'))
     print(data)
