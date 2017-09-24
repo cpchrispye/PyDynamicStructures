@@ -1,9 +1,11 @@
 import weakref
 from struct import unpack, pack, calcsize
 from PyDynamicStructures.dynamic_structure import StructureList
+from PyDynamicStructures.descriptors import DynamicDescriptor
 
 __all__ = [ 'BYTE', 'UINT8', 'UINT16', 'UINT32', 'UINT64', 'DOUBLE', 'FLOAT',
             'BYTE_L', 'UINT8_L', 'UINT16_L', 'UINT32_L', 'UINT64_L', 'DOUBLE_L', 'FLOAT_L',  'EMPTY', 'STRING', 'BaseType']
+
 class BaseTypeError(Exception):
     def __init__(self, base_object, message):
         path = '.'.join([p.__class__.__name__ for p in base_object.get_path()])
@@ -11,7 +13,7 @@ class BaseTypeError(Exception):
         super(BaseTypeError, self).__init__(message)
 
 
-class BaseType(object):
+class BaseType(DynamicDescriptor):
     BASEFORMAT   = ''
     BASEENDIAN   = '<'
     DEFAULTVALUE = 0
@@ -74,6 +76,9 @@ class BaseType(object):
     def update(self):
         vals = unpack(self.BASEENDIAN + self.BASEFORMAT, self.__buffer[self.__offset:self.__offset + self.size()])
         self.internal_value = vals[0]
+
+    def update_selectors(self):
+        pass
 
     @classmethod
     def get_format(cls):

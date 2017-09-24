@@ -1,52 +1,17 @@
 from PyDynamicStructures.base_types import *
+from PyDynamicStructures.descriptors import DynamicDescriptor, ClassDesc, ListDesc
 from collections import Sequence, OrderedDict
 import weakref
 
 __all__ = ['Structure', 'StructureList', 'Selector', 'sizeof']
 
-SETTER = '__dset__'
-GETTER = '__dget__'
-
 def sizeof(struct):
     return struct.size()
-
-def get_descriptor(key, self, getter, supered_method):
-    v = supered_method(key)
-    if hasattr(v, getter):
-        return getattr(v, getter)(self, type(self))
-    return v
-
-def set_descriptor(key, value, self, setter, supered_method, order=False):
-    if order:
-        try:
-            self._fields[key] = None
-        except Exception:
-            object.__setattr__(self, '_fields', OrderedDict())
-            self._fields[key] = None
-
-    try:
-        v = self.get_item(key)
-    except Exception:
-        if hasattr(value, 'set_parent'):
-            value.set_parent(self)
-        return supered_method(key, value)
-
-    # if attribute has __set__ we call its __set__ method unless the value we are setting has a __set__ method
-    # then its likely that the user is trying to replace the descriptor. The user may wish to replace the
-    # descriptor with another object thats not a descriptor in which case the object should have a REPLACE attribute set to True
-    if (hasattr(v, setter)
-        and not (hasattr(value, setter)
-                 or (hasattr(value, 'REPLACE') and value.REPLACE == True))):
-        # set the property
-        getattr(v, setter)(self, value)
-    else:
-        # set the attribute
-        return supered_method(key, value)
 
 
 class StructureBase(object):
 
-    def get_structure_items(self, with_attr=None):
+    def get_descriptors(self):
         print("not here")
         raise Exception("get_structure_items needs defining")
 
@@ -54,9 +19,6 @@ class StructureBase(object):
         raise Exception("get_items needs defining")
 
     def set_item(self, key, value):
-        raise Exception("get_items needs defining")
-
-    def get_attributes(self):
         raise Exception("get_items needs defining")
 
     def set_parent(self, parent):
@@ -76,16 +38,16 @@ class StructureBase(object):
 
     def update(self):
         index = 0
-        for struct in self.get_structure_items('unpack').values():
+        for struct in self.get_descriptors():
             index += struct.unpack(self._buffer, index + self._offset)
 
     def update_selectors(self):
-        for struct in self.get_structure_items('update_selectors').values():
+        for struct in self.get_descriptors():
             struct.update_selectors()
 
     def pack(self):
         byte_data = bytes()
-        for struct in self.get_structure_items('pack').values():
+        for struct in self.get_descriptors():
             byte_data += struct.pack()
         return byte_data
 
@@ -93,34 +55,25 @@ class StructureBase(object):
         index = 0
         self._offset = offset
         self._buffer = buffer
-        for struct in self.get_structure_items('unpack').values():
+        for struct in self.get_descriptors():
             index += struct.unpack(buffer, index + offset)
         return index
 
     def size(self):
         size_in_bytes = 0
-        for struct in self.get_structure_items('size').values():
+        for struct in self.get_descriptors():
             size_in_bytes += struct.size()
         return size_in_bytes
 
     def get_format(self):
         out = []
-        for struct in self.get_structure_items().values():
+        for struct in self.get_descriptors():
             out += struct.get_format()
-        return out
-
-    def get_structure_items(self, with_attr=None):
-        with_attr = 'pack' if with_attr is None else with_attr
-        out = OrderedDict()
-        for name in self.get_attributes():
-            value = self.get_item(name)
-            if hasattr(value, with_attr):
-                out[name] = value
         return out
 
     def set_values(self, value):
         index = 0
-        for k, v in self.get_structure_items('set_values').items():
+        for k, v in zip(self.get_keys(), self.get_descriptors()):
             if index >= len(value):
                 break
             key = index
@@ -141,9 +94,8 @@ class StructureBase(object):
         return StructureList([self() for _ in range(int(other))])
 
 
-class Structure(StructureBase):
-    """
-    """
+class Structure(ClassDesc, StructureBase):
+    STORE    = OrderedDict
     REPLACE  = True
     _fields_ = []
 
@@ -162,20 +114,15 @@ class Structure(StructureBase):
             new_instance.set_values(values)
         return new_instance
 
-    def get_item(self, key):
-        return object.__getattribute__(self, key)
+    def get_descriptors(self):
+        return self._store_.values()
 
-    def __getattribute__(self, key):
-        return get_descriptor(key, self, GETTER, super(Structure, self).__getattribute__)
+    def get_keys(self):
+        return self._store_.keys()
 
-    def set_item(self, key, value):
-        object.__setattr__(self, key, value)
+    def set_item(self, key, val):
+        super(Structure, self).__setattr__(key, val)
 
-    def __setattr__(self, key, value):
-        set_descriptor(key, value, self, SETTER, super(Structure, self).__setattr__, True)
-
-    def get_attributes(self):
-        return self._fields.keys()
 
     def add_field(self, name, type_val, length=None):
         if isinstance(type(type_val), type):
@@ -198,49 +145,36 @@ class Structure(StructureBase):
             self.add_field(name, type, length)
 
 
-class StructureList(list, StructureBase):
+class StructureList(ListDesc, StructureBase):
     REPLACE = True
 
-    def get_item(self, key):
-        return list.__getitem__(self, key)
+    def get_descriptors(self):
+        return self
 
-    def __getitem__(self, key):
-        return get_descriptor(key, self,  GETTER, super(StructureList, self).__getitem__)
-
-    def set_item(self, key, value):
-        list.__setitem__(self, key, value)
-
-    def __setitem__(self, key, value):
-        set_descriptor(key, value, self, SETTER, super(StructureList, self).__setitem__)
-
-    def get_attributes(self):
+    def get_keys(self):
         return range(len(self))
 
 
-
-class Selector(StructureBase):
+class Selector(DynamicDescriptor, StructureBase):
     REPLACE  = True
     _fields_ = []
 
     def __init__(self, **kwargs):
         self.kwargs = kwargs
-        self.internal_state = None
+        self.internal_value = None
 
     def select(self, **kwargs):
         raise Exception("select method needs defining")
 
     def __dget__(self, instance, owner):
-        return self.internal_state
+        return self.internal_value
 
     def __dset__(self, instance, value):
         raise AttributeError("Cannot set Selector")
 
-    def __ddelete__(self, instance):
-        pass
-
     def set_values(self, values):
         self.update_selectors()
-        return self.internal_state.set_values(values)
+        return self.internal_value.set_values(values)
 
     def get_structure_items(self, with_attr=None):
         raise Exception(".get_structure_items() called on Selector this should not occur")
@@ -259,29 +193,29 @@ class Selector(StructureBase):
         return this_dir
 
     def update(self):
-        if self.internal_state is None:
+        if self.internal_value is None:
             raise Exception("Selector needs to be initialized call unpack() on it")
-        return self.internal_state.update(self._buffer)
+        return self.internal_value.update(self._buffer)
 
     def update_selectors(self):
-        self.internal_state = self.select(**self.kwargs)
+        self.internal_value = self.select(**self.kwargs)
 
     def pack(self):
-        if self.internal_state is None:
+        if self.internal_value is None:
             raise Exception("Selector needs to be initialized call unpack() on it")
-        return self.internal_state.pack()
+        return self.internal_value.pack()
 
     def unpack(self, buffer, offset=0):
         index = 0
         self._offset = offset
         self._buffer = buffer
-        self.internal_state = self.select(**self.kwargs)
-        index += self.internal_state.unpack(buffer, index + offset)
+        self.internal_value = self.select(**self.kwargs)
+        index += self.internal_value.unpack(buffer, index + offset)
         return index
 
     def get_format(self):
         out = []
-        for struct in self.internal_state.get_structure_items().values():
+        for struct in self.internal_value.get_descriptors():
             out += struct.get_format()
         return out
 
@@ -320,7 +254,7 @@ if __name__ == "__main__":
     data = ''.join(['%02x' % i for i in range(255)])
     header_data = data.decode("hex")
 
-    hd = EncapsulationHeader.build_with_values(0,5,2,3,4,5,6,7,8,9,10,11,12,13,14)
+    hd = EncapsulationHeader()#.build_with_values(0,5,2,3,4,5,6,7,8,9,10,11,12,13,14)
 
     hd.unpack(header_data)
     v = hd.command
@@ -333,7 +267,7 @@ if __name__ == "__main__":
     hd.length = 10
     hd.update_selectors()
     print(hd.get_format())
-    hd.options.f = 0
+    hd.options.c = 0
     d = hd.pack()
     print(data)
     print(d.encode("hex"))
