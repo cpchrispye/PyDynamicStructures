@@ -36,12 +36,26 @@ class StructureBase(object):
             return [self]
         return parent.get_path() + [self]
 
+    def select_manager(self, unpack=False, values=False):
+        if hasattr(self, 'select'):
+            count = 0
+            while self.select() != True:
+                if unpack:
+                    self._unpack(self._buffer, self._offset)
+                elif values:
+                    self._set_values(self._values)
+
+                count += 1
+                if count > 100:
+                    raise Exception("select called to manny times")
+
     def update(self):
         index = 0
         for struct in self.get_descriptors():
             index += struct.unpack(self._buffer, index + self._offset)
 
     def update_selectors(self):
+        self.select_manager()
         for struct in self.get_descriptors():
             struct.update_selectors()
 
@@ -52,12 +66,16 @@ class StructureBase(object):
         return byte_data
 
     def unpack(self, buffer, offset=0):
-        index = 0
         self._offset = offset
         self._buffer = buffer
+        self.select_manager(unpack=True)
+        return self._unpack(buffer, offset)
+
+    def _unpack(self, buffer, offset=0):
+        index = offset
         for struct in self.get_descriptors():
-            index += struct.unpack(buffer, index + offset)
-        return index
+            index += struct.unpack(buffer, index)
+        return offset - index
 
     def size(self):
         size_in_bytes = 0
@@ -72,6 +90,11 @@ class StructureBase(object):
         return out
 
     def set_values(self, value):
+        self._values = value
+        self.select_manager(values=True)
+        return self._set_values(value)
+
+    def _set_values(self, value):
         index = 0
         for k, v in zip(self.get_keys(), self.get_descriptors()):
             if index >= len(value):
@@ -123,7 +146,6 @@ class Structure(ClassDesc, StructureBase):
     def set_item(self, key, val):
         super(Structure, self).__setattr__(key, val)
 
-
     def add_field(self, name, type_val, length=None):
         if isinstance(type(type_val), type):
             type_val = type_val()
@@ -146,7 +168,6 @@ class Structure(ClassDesc, StructureBase):
 
 
 class StructureList(ListDesc, StructureBase):
-    REPLACE = True
 
     def get_descriptors(self):
         return self
@@ -156,8 +177,6 @@ class StructureList(ListDesc, StructureBase):
 
 
 class Selector(DynamicDescriptor, StructureBase):
-    REPLACE  = True
-    _fields_ = []
 
     def __init__(self, **kwargs):
         self.kwargs = kwargs
@@ -176,8 +195,8 @@ class Selector(DynamicDescriptor, StructureBase):
         self.update_selectors()
         return self.internal_value.set_values(values)
 
-    def get_structure_items(self, with_attr=None):
-        raise Exception(".get_structure_items() called on Selector this should not occur")
+    def get_descriptors(self, with_attr=None):
+        raise Exception(".get_descriptors() called on Selector this should not occur")
 
     def get_variable(self, path):
         if path[0] == '.':
@@ -219,6 +238,21 @@ class Selector(DynamicDescriptor, StructureBase):
             out += struct.get_format()
         return out
 
+class SelfStruct(Structure):
+
+    def select(self):
+        root = self.get_path()[0]
+        if not hasattr(root.data, 'figit'):
+            self.add_field('figit', UINT64)
+            return False
+
+        if not hasattr(root.data, 'type'):
+            if root.data.figit > 100:
+                self.add_field('type', UINT64)
+            else:
+                self.add_field('type', UINT16)
+            return True
+
 if __name__ == "__main__":
 
     class DynamicArray(Selector):
@@ -249,7 +283,7 @@ if __name__ == "__main__":
             self.status = UINT32()
             self.sender_context = UINT64()
             self.options = UINT32()
-            self.data = DynamicArray(length='length', type=UINT8)
+            self.data = SelfStruct()
 
     data = ''.join(['%02x' % i for i in range(255)])
     header_data = data.decode("hex")
