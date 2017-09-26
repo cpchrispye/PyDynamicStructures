@@ -1,6 +1,6 @@
 import weakref
 from struct import unpack, pack, calcsize
-from PyDynamicStructures.dynamic_structure import StructureList
+from PyDynamicStructures.dynamic_structure import StructureList as SL
 from PyDynamicStructures.descriptors import DynamicDescriptor
 
 __all__ = [ 'BYTE', 'UINT8', 'UINT16', 'UINT32', 'UINT64', 'DOUBLE', 'FLOAT',
@@ -96,11 +96,11 @@ class BaseType(DynamicDescriptor):
 
     @classmethod
     def __mul__(cls, other):
-        return StructureList([cls() for _ in range(int(other))])
+        return SL([cls() for _ in range(int(other))])
 
     @classmethod
     def __rmul__(cls, other):
-        return StructureList([cls() for _ in range(int(other))])
+        return SL([cls() for _ in range(int(other))])
 
 
 class EMPTY(BaseType):
