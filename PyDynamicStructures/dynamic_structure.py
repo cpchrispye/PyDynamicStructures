@@ -11,9 +11,12 @@ def sizeof(struct):
 
 class StructureBase(object):
 
-    def get_descriptors(self):
+    def values(self):
         print("not here")
-        raise Exception("get_structure_items needs defining")
+        raise Exception("values needs defining")
+
+    def keys(self):
+        raise Exception("keys needs defining")
 
     def get_item(self, key):
         raise Exception("get_items needs defining")
@@ -21,8 +24,16 @@ class StructureBase(object):
     def set_item(self, key, value):
         raise Exception("get_items needs defining")
 
+    def structure(self):
+        if hasattr(self, 'select'):
+            struct = self.select()
+        else:
+            struct = zip(self.keys(), self.values())
+        return struct
+
     def set_parent(self, parent):
         self._parent = weakref.ref(parent)
+        self.update_selectors()
 
     def get_parent(self):
         try:
@@ -30,73 +41,54 @@ class StructureBase(object):
         except AttributeError:
             return None
 
-    def get_path(self):
+    def root(self):
+        return self.path()[0]
+
+    def path(self):
         parent = self.get_parent()
         if parent is None:
             return [self]
-        return parent.get_path() + [self]
-
-    def select_manager(self, unpack=False, values=False):
-        if hasattr(self, 'select'):
-            count = 0
-            while self.select() != True:
-                if unpack:
-                    self._unpack(self._buffer, self._offset)
-                elif values:
-                    self._set_values(self._values)
-
-                count += 1
-                if count > 100:
-                    raise Exception("select called to manny times")
+        return parent.path() + [self]
 
     def update(self):
-        index = 0
-        for struct in self.get_descriptors():
-            index += struct.unpack(self._buffer, index + self._offset)
+        self.unpack(self._buffer, self._offset)
 
     def update_selectors(self):
-        self.select_manager()
-        for struct in self.get_descriptors():
+        if hasattr(self, 'select'):
+            _ = list(self.select())
+        for struct in self.values():
             struct.update_selectors()
 
     def pack(self):
         byte_data = bytes()
-        for struct in self.get_descriptors():
+        for struct in self.values():
             byte_data += struct.pack()
         return byte_data
 
     def unpack(self, buffer, offset=0):
         self._offset = offset
         self._buffer = buffer
-        self.select_manager(unpack=True)
-        return self._unpack(buffer, offset)
-
-    def _unpack(self, buffer, offset=0):
-        index = offset
-        for struct in self.get_descriptors():
+        index        = offset
+        for key, struct in self.structure():
             index += struct.unpack(buffer, index)
         return offset - index
 
     def size(self):
         size_in_bytes = 0
-        for struct in self.get_descriptors():
+        for struct in self.values():
             size_in_bytes += struct.size()
         return size_in_bytes
 
     def get_format(self):
         out = []
-        for struct in self.get_descriptors():
+        for struct in self.values():
             out += struct.get_format()
         return out
 
     def set_values(self, value):
-        self._values = value
-        self.select_manager(values=True)
-        return self._set_values(value)
-
-    def _set_values(self, value):
+        #self._values = value
         index = 0
-        for k, v in zip(self.get_keys(), self.get_descriptors()):
+        for k, v in self.structure():
             if index >= len(value):
                 break
             key = index
@@ -137,10 +129,10 @@ class Structure(ClassDesc, StructureBase):
             new_instance.set_values(values)
         return new_instance
 
-    def get_descriptors(self):
+    def values(self):
         return self._store_.values()
 
-    def get_keys(self):
+    def keys(self):
         return self._store_.keys()
 
     def set_item(self, key, val):
@@ -154,6 +146,7 @@ class Structure(ClassDesc, StructureBase):
             setattr(self, name, type_val)
         elif length is not None:
             setattr(self, name, type_val * length)
+        return (name, type_val)
 
     def add_fields(self, fields):
         for field in fields:
@@ -169,10 +162,10 @@ class Structure(ClassDesc, StructureBase):
 
 class StructureList(ListDesc, StructureBase):
 
-    def get_descriptors(self):
+    def values(self):
         return self
 
-    def get_keys(self):
+    def keys(self):
         return range(len(self))
 
 
@@ -195,14 +188,14 @@ class Selector(DynamicDescriptor, StructureBase):
         self.update_selectors()
         return self.internal_value.set_values(values)
 
-    def get_descriptors(self, with_attr=None):
+    def values(self, with_attr=None):
         raise Exception(".get_descriptors() called on Selector this should not occur")
 
     def get_variable(self, path):
         if path[0] == '.':
             path = path[1:]
         attr_names = path.split('.')
-        root = self.get_path()[0]
+        root = self.path()[0]
         try:
             this_dir = root
             for attr_name in attr_names:
@@ -234,24 +227,22 @@ class Selector(DynamicDescriptor, StructureBase):
 
     def get_format(self):
         out = []
-        for struct in self.internal_value.get_descriptors():
+        for struct in self.internal_value.values():
             out += struct.get_format()
         return out
 
 class SelfStruct(Structure):
 
     def select(self):
-        root = self.get_path()[0]
-        if not hasattr(root.data, 'figit'):
-            self.add_field('figit', UINT64)
-            return False
+        root = self.root()
 
-        if not hasattr(root.data, 'type'):
-            if root.data.figit > 100:
-                self.add_field('type', UINT64)
-            else:
-                self.add_field('type', UINT16)
-            return True
+        yield self.add_field('figit', UINT32)
+
+        if self.figit > 100:
+            yield self.add_field('type', UINT64)
+        else:
+            yield self.add_field('type', UINT16)
+
 
 if __name__ == "__main__":
 
