@@ -8,6 +8,18 @@ __all__ = ['Structure', 'StructureList', 'Selector', 'sizeof']
 def sizeof(struct):
     return struct.size()
 
+def get_variable(root, path):
+    if path[0] == '.':
+        path = path[1:]
+    attr_names = path.split('.')
+    try:
+        this_dir = root
+        for attr_name in attr_names:
+            this_dir = getattr(this_dir, attr_name)
+    except AttributeError as e:
+        raise AttributeError("Cannot find dir %s %s: message %s" % (attr_name, path, str(e)))
+    return this_dir
+
 
 class StructureBase(object):
 
@@ -17,6 +29,9 @@ class StructureBase(object):
 
     def keys(self):
         raise Exception("keys needs defining")
+
+    def clear(self, item=None):
+        raise Exception("clear needs defining")
 
     def get_item(self, key):
         raise Exception("get_items needs defining")
@@ -71,7 +86,7 @@ class StructureBase(object):
         index        = offset
         for key, struct in self.structure():
             index += struct.unpack(buffer, index)
-        return offset - index
+        return index - offset
 
     def size(self):
         size_in_bytes = 0
@@ -86,7 +101,6 @@ class StructureBase(object):
         return out
 
     def set_values(self, value):
-        #self._values = value
         index = 0
         for k, v in self.structure():
             if index >= len(value):
@@ -129,6 +143,12 @@ class Structure(ClassDesc, StructureBase):
             new_instance.set_values(values)
         return new_instance
 
+    def clear(self, item=None):
+        if item is None:
+            self._store_.clear()
+        else:
+            del self._store_[item]
+
     def values(self):
         return self._store_.values()
 
@@ -168,6 +188,18 @@ class StructureList(ListDesc, StructureBase):
     def keys(self):
         return range(len(self))
 
+    def clear(self, item=None):
+        if item is None:
+            del self[:]
+        else:
+            self.remove(item)
+
+    def get_item(self, key):
+        return list.__getitem__(self, key)
+
+    def set_item(self, key, value):
+        list.__setitem__(self, key, value)
+
 
 class Selector(DynamicDescriptor, StructureBase):
 
@@ -188,21 +220,14 @@ class Selector(DynamicDescriptor, StructureBase):
         self.update_selectors()
         return self.internal_value.set_values(values)
 
-    def values(self, with_attr=None):
-        raise Exception(".get_descriptors() called on Selector this should not occur")
+    def values(self):
+        return self.internal_value.values()
 
-    def get_variable(self, path):
-        if path[0] == '.':
-            path = path[1:]
-        attr_names = path.split('.')
-        root = self.path()[0]
-        try:
-            this_dir = root
-            for attr_name in attr_names:
-                this_dir = getattr(this_dir, attr_name)
-        except AttributeError as e:
-            raise AttributeError("Cannot find dir %s %s: message %s" % (attr_name, path, str(e)))
-        return this_dir
+    def keys(self):
+        return self.internal_value.keys()
+
+    def structure(self):
+        return self.internal_value.structure()
 
     def update(self):
         if self.internal_value is None:
@@ -231,25 +256,25 @@ class Selector(DynamicDescriptor, StructureBase):
             out += struct.get_format()
         return out
 
-class SelfStruct(Structure):
 
-    def select(self):
-        root = self.root()
-
-        yield self.add_field('figit', UINT32)
-
-        if self.figit > 100:
-            yield self.add_field('type', UINT64)
-        else:
-            yield self.add_field('type', UINT16)
 
 
 if __name__ == "__main__":
+    class SelfStruct(Structure):
+
+        def select(self):
+            root = self.root()
+
+            yield self.add_field('figit', UINT32)
+
+            if self.figit > 100:
+                yield self.add_field('type', UINT64)
+            else:
+                yield self.add_field('type', UINT16)
 
     class DynamicArray(Selector):
-
         def select(self, **kwargs):
-            size     = self.get_variable(kwargs['length'])
+            size     = get_variable(self.root(), kwargs['length'])
             str_type = kwargs['type']()
             return str_type * size
 
@@ -273,8 +298,8 @@ if __name__ == "__main__":
             self.session_handle = UINT32()
             self.status = UINT32()
             self.sender_context = UINT64()
-            self.options = UINT32()
-            self.data = SelfStruct()
+            self.options = SelfStruct()
+            self.data = DynamicArray(length='length', type=UINT8)
 
     data = ''.join(['%02x' % i for i in range(255)])
     header_data = data.decode("hex")
