@@ -39,11 +39,14 @@ class StructureBase(object):
     def set_item(self, key, value):
         raise Exception("get_items needs defining")
 
+    def items(self):
+        return zip(self.keys(), self.values())
+
     def structure(self):
         if hasattr(self, 'select'):
             struct = self.select()
         else:
-            struct = zip(self.keys(), self.values())
+            struct = self.items()
         return struct
 
     def set_parent(self, parent):
@@ -115,6 +118,25 @@ class StructureBase(object):
             else:
                 index += v.set_values(value[key:])
         return index
+
+    def str_struct(self, depth=0):
+        out = ''
+        for key, val in self.items():
+            if hasattr(val, 'str_struct'):
+                out += '\t' * depth + str(key) + ':- \n'
+                out += val.str_struct(depth + 1)
+            else:
+                out += '\t' * depth + str(key) + ': ' + str(val) + '\n'
+        return out
+
+    def __repr__(self):
+        out = []
+        for key, val in self.items():
+            out.append("%s: %s" % (str(key), val.__class__.__name__))
+        return ', '.join(out)
+
+    def __str__(self):
+        return self.str_struct()
 
     def __mul__(self, other):
         return StructureList([self() for _ in range(int(other))])
@@ -321,6 +343,7 @@ if __name__ == "__main__":
     d = hd.pack()
     print(data)
     print(d.encode("hex"))
+    print(hd)
 
     i=1
 
