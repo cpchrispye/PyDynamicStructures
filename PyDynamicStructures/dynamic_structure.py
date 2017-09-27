@@ -1,5 +1,5 @@
 from PyDynamicStructures.descriptors import DynamicDescriptor, ClassDesc, ListDesc
-from collections import Sequence, OrderedDict
+from collections import Sequence, OrderedDict, Iterable
 import weakref
 
 __all__ = ['Structure', 'StructureList', 'Selector', 'sizeof']
@@ -39,16 +39,9 @@ class StructureBase(object):
     def items(self):
         return zip(self.keys(), self.values())
 
-    def structure(self):
-        if hasattr(self, 'build'):
-            struct = self.build()
-        else:
-            struct = self.items()
-        return struct
-
     def set_parent(self, parent):
         self._parent = weakref.ref(parent)
-        self.update_selectors()
+        self.update()
 
     def get_parent(self):
         try:
@@ -66,13 +59,34 @@ class StructureBase(object):
         return parent.path() + [self]
 
     def update(self):
-        self.unpack(self._buffer, self._offset)
+        if hasattr(self, 'build'):
+            old_store = self._store_
+            for key, val in self.build_manager():
+                old_val = old_store.get(key)
+                if type(old_val) == type(val):
+                    val.set_values(old_val.base_values())
+        else:
+            for val in self.values():
+                val.update()
 
-    def update_selectors(self):
-        if hasattr(self, 'select'):
-            _ = list(self.select())
-        for struct in self.values():
-            struct.update_selectors()
+    def build_manager(self):
+        if hasattr(self, 'build'):
+            self._store_ = self.STORE()
+            stop_points = self.build()
+            index = 0
+            for _ in stop_points:
+                for item in self.items()[index:]:
+                    yield item
+                    index += 1
+        else:
+            for item in self.items():
+                yield item
+
+    # def update_selectors(self):
+    #     if hasattr(self, 'select'):
+    #         _ = list(self.select())
+    #     for struct in self.values():
+    #         struct.update_selectors()
 
     def pack(self):
         byte_data = bytes()
@@ -80,13 +94,16 @@ class StructureBase(object):
             byte_data += struct.pack()
         return byte_data
 
-    def unpack(self, buffer, offset=0):
-        self._offset = offset
-        self._buffer = buffer
-        index        = offset
-        for key, struct in self.structure():
-            index += struct.unpack(buffer, index)
-        return index - offset
+    def unpack(self, buffer=None, offset=0):
+        if buffer is not None:
+            self._offset = offset
+            self._buffer = buffer
+        if self._buffer is None:
+            raise Exception('unpack must be call with buffer at least once')
+        index = self._offset
+        for key, struct in self.build_manager():
+            index += struct.unpack(self._buffer, index)
+        return index - self._offset
 
     def size(self):
         size_in_bytes = 0
@@ -102,7 +119,7 @@ class StructureBase(object):
 
     def set_values(self, value):
         index = 0
-        for k, v in self.structure():
+        for k, v in self.build_manager():
             if index >= len(value):
                 break
             key = index
@@ -115,6 +132,12 @@ class StructureBase(object):
             else:
                 index += v.set_values(value[key:])
         return index
+
+    def base_values(self):
+        values = []
+        for v in self.values():
+            values += v.base_values()
+        return values
 
     def str_struct(self, depth=0):
         out = ''
@@ -153,7 +176,7 @@ class Structure(ClassDesc, StructureBase):
         return new_instance
 
     @classmethod
-    def build_with_values(cls, *args, **kwargs):
+    def from_values(cls, *args, **kwargs):
         new_instance = cls()
         values = list(args)
         if len(values) == 0:
@@ -241,32 +264,32 @@ class Selector(DynamicDescriptor, StructureBase):
         return self.internal_value.structure()
 
     def update(self):
-        if self.internal_value is None:
-            raise Exception("Selector needs to be initialized call unpack() on it")
-        return self.internal_value.update(self._buffer)
-
-    def update_selectors(self):
         self.internal_value = self.select(**self.kwargs)
+
+    # def update_selectors(self):
+    #     self.internal_value = self.select(**self.kwargs)
 
     def pack(self):
         if self.internal_value is None:
             raise Exception("Selector needs to be initialized call unpack() on it")
         return self.internal_value.pack()
 
-    def unpack(self, buffer, offset=0):
-        index = 0
-        self._offset = offset
-        self._buffer = buffer
+    def unpack(self, buffer=None, offset=0):
+        if buffer is not None:
+            self._offset = offset
+            self._buffer = buffer
+        if self._buffer is None:
+            raise Exception('unpack must be call with buffer at least once')
+        index = self._offset
         self.internal_value = self.select(**self.kwargs)
-        index += self.internal_value.unpack(buffer, index + offset)
+        index + self.internal_value.unpack(self._buffer, index)
         return index
+
+    def base_values(self):
+        return self.internal_value.base_values()
 
     def get_format(self):
         out = []
         for struct in self.internal_value.values():
             out += struct.get_format()
         return out
-
-
-
-

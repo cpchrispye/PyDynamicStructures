@@ -6,13 +6,15 @@ if __name__ == "__main__":
 
         def build(self):
             root = self.root()
+            self.command = UINT32()
+            yield
 
-            yield self.add_field('figit', UINT32)
-
-            if self.figit > 100:
-                yield self.add_field('type', UINT64)
+            if self.command > 100:
+                self.type = UINT64()
+                yield
             else:
-                yield self.add_field('type', UINT16)
+                self.type = UINT16()
+                yield
 
     class DynamicArray(Selector):
         def select(self, **kwargs):
@@ -53,11 +55,11 @@ if __name__ == "__main__":
     d = hd.pack()
     print(d.encode('hex'))
     print(data)
-    alt_struct = sub_alt(3, 5)
+    alt_struct = sub_alt.from_values(3, 5)
     hd.options = alt_struct
     hd.update()
     hd.length = 10
-    hd.update_selectors()
+    hd.update()
     print(hd.get_format())
     hd.options.c = 0
     d = hd.pack()

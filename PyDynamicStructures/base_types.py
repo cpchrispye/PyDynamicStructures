@@ -58,27 +58,26 @@ class BaseType(DynamicDescriptor):
         try:
             return pack(self.BASEENDIAN + self.BASEFORMAT, self.internal_value)
         except Exception as e:
-            BaseTypeError(self, "pack error class %s, value %s, message: %s" % (str(self.internal_value), str(e)))
+            raise BaseTypeError(self, "pack error class %s, value %s, message: %s" % (str(self.internal_value), str(e)))
 
-    def unpack(self, buffer, offset=0):
-        self.__offset = offset
-        self.__buffer = buffer
+    def unpack(self, buffer=None, offset=0):
+        if buffer is not None:
+            self.__offset = offset
+            self.__buffer = buffer
         try:
             vals = unpack(self.BASEENDIAN + self.BASEFORMAT, self.__buffer[self.__offset:self.__offset + self.size()])
         except Exception as e:
-
-            BaseTypeError(self, "unpack error class %s, value %s, message: %s" % (str(self.internal_value), str(e)))
+            raise BaseTypeError(self, "unpack error class %s, value %s, message: %s" % (str(self.internal_value), str(e)))
 
         self.internal_value = vals[0]
-
         return self.size()
 
     def update(self):
-        vals = unpack(self.BASEENDIAN + self.BASEFORMAT, self.__buffer[self.__offset:self.__offset + self.size()])
-        self.internal_value = vals[0]
-
-    def update_selectors(self):
         pass
+
+    def base_values(self):
+        return [self.internal_value]
+
 
     @classmethod
     def get_format(cls):
@@ -105,6 +104,7 @@ class BaseType(DynamicDescriptor):
 
 class EMPTY(BaseType):
     BASEFORMAT = ''
+    DEFAULTVALUE = None
 
     def __dget__(self, instance, owner):
         return None
