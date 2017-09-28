@@ -2,7 +2,7 @@ from PyDynamicStructures.descriptors import DynamicDescriptor, ClassDesc, ListDe
 from collections import Sequence, OrderedDict, Iterable
 import weakref
 
-__all__ = ['Structure', 'StructureList', 'Selector', 'sizeof']
+__all__ = ['Structure', 'StructureList', 'Selector', 'StructureBit', 'sizeof', 'get_variable']
 
 def sizeof(struct):
     return struct.size()
@@ -73,20 +73,19 @@ class StructureBase(object):
         if hasattr(self, 'build'):
             self._store_ = self.STORE()
             stop_points = self.build()
-            index = 0
-            for _ in stop_points:
+            if isinstance(stop_points, Iterable):
+                index = 0
+                for _ in stop_points:
+                    for item in self.items()[index:]:
+                        yield item
+                        index += 1
                 for item in self.items()[index:]:
                     yield item
                     index += 1
-        else:
-            for item in self.items():
-                yield item
+                raise StopIteration
 
-    # def update_selectors(self):
-    #     if hasattr(self, 'select'):
-    #         _ = list(self.select())
-    #     for struct in self.values():
-    #         struct.update_selectors()
+        for item in self.items():
+            yield item
 
     def pack(self):
         byte_data = bytes()
@@ -167,7 +166,6 @@ class StructureBase(object):
 
 class Structure(ClassDesc, StructureBase):
     STORE    = OrderedDict
-    REPLACE  = True
     _fields_ = []
 
     def __new__(cls, *args, **kwargs):
@@ -196,6 +194,9 @@ class Structure(ClassDesc, StructureBase):
 
     def keys(self):
         return self._store_.keys()
+
+    def items(self):
+        return self._store_.items()
 
     def add_field(self, name, type_val, length=None):
         if isinstance(type(type_val), type):
@@ -234,7 +235,6 @@ class StructureList(ListDesc, StructureBase):
             self.remove(item)
 
 
-
 class Selector(DynamicDescriptor, StructureBase):
 
     def __init__(self, **kwargs):
@@ -266,9 +266,6 @@ class Selector(DynamicDescriptor, StructureBase):
     def update(self):
         self.internal_value = self.select(**self.kwargs)
 
-    # def update_selectors(self):
-    #     self.internal_value = self.select(**self.kwargs)
-
     def pack(self):
         if self.internal_value is None:
             raise Exception("Selector needs to be initialized call unpack() on it")
@@ -293,3 +290,29 @@ class Selector(DynamicDescriptor, StructureBase):
         for struct in self.internal_value.values():
             out += struct.get_format()
         return out
+
+
+class StructureBit(ClassDesc, StructureBase):
+    STORE = OrderedDict
+
+    def clear(self, item=None):
+        if item is None:
+            self._store_.clear()
+        else:
+            del self._store_[item]
+
+    def values(self):
+        return self._store_.values()
+
+    def keys(self):
+        return self._store_.keys()
+
+    def items(self):
+        return self._store_.items()
+
+
+
+
+
+
+

@@ -1,10 +1,12 @@
 import weakref
+import math
 from struct import unpack, pack, calcsize
 from PyDynamicStructures.dynamic_structure import StructureList as SL
 from PyDynamicStructures.descriptors import DynamicDescriptor
+from PyDynamicStructures.utils import *
 
 __all__ = [ 'BYTE', 'UINT8', 'UINT16', 'UINT32', 'UINT64', 'DOUBLE', 'FLOAT',
-            'BYTE_L', 'UINT8_L', 'UINT16_L', 'UINT32_L', 'UINT64_L', 'DOUBLE_L', 'FLOAT_L',  'EMPTY', 'STRING', 'BaseType']
+            'BYTE_L', 'UINT8_L', 'UINT16_L', 'UINT32_L', 'UINT64_L', 'DOUBLE_L', 'FLOAT_L',  'EMPTY', 'STRING', 'BaseType', 'BitField']
 
 class BaseTypeError(Exception):
     def __init__(self, base_object, message):
@@ -100,6 +102,94 @@ class BaseType(DynamicDescriptor):
     @classmethod
     def __rmul__(cls, other):
         return SL([cls() for _ in range(int(other))])
+
+class BitField(DynamicDescriptor):
+    BASEFORMAT   = 'c'
+    BASEENDIAN   = '<'
+    DEFAULTVALUE = 0
+    REPLACE      = True
+
+
+    def __init__(self, size):
+        self.internal_value = self.DEFAULTVALUE
+        self.__size = size
+        self.__offset = None
+
+    def __dget__(self, instance, owner):
+        return self.internal_value
+
+    def __dset__(self, instance, value):
+        self.internal_value = value
+
+    def __ddelete__(self, instance):
+        raise BaseTypeError(self, "Descriptor __delete__ not overridden correctly ")
+
+    def set_parent(self, parent):
+        self.__parent = weakref.ref(parent)
+
+    def get_parent(self):
+        try:
+            return self.__parent()
+        except AttributeError:
+            return None
+
+    def get_path(self):
+        parent = self.get_parent()
+        if parent is None:
+            return [self]
+        return parent.get_path() + [self]
+
+    def set_values(self, val):
+        if isinstance(val[0], (tuple, list, dict)):
+            raise BaseTypeError(self, "values to be set are a sequence or dict need to be int or char")
+        self.internal_value = val[0]
+        return 1
+
+    def pack(self):
+        try:
+            mask = (1 << self.__size + 1) - 1
+            return (mask & self.internal_value) << self.__offset
+        except Exception as e:
+            raise BaseTypeError(self, "pack error class %s, value %s, message: %s" % (str(self.internal_value), str(e)))
+
+    def unpack(self, buffer=None, bit_offset=0):
+        buffer = bytes(buffer)
+        if buffer is not None:
+            self.__offset = bit_offset
+            self.__buffer = buffer
+        try:
+            offset = bit_offset // 8
+            self.internal_value  = bytes_to_bit(self.__buffer, self.size(), offset, bit_offset)
+        except Exception as e:
+            raise BaseTypeError(self, "unpack error class %s, value %s, message: %s" % (str(self.internal_value), str(e)))
+        return self.size()
+
+    def update(self):
+        pass
+
+    def base_values(self):
+        return [self.internal_value]
+
+    def size(self):
+        return self.__size
+
+    @classmethod
+    def get_format(cls):
+        return [cls.BASEFORMAT]
+
+    def __str__(self):
+        return str(self.internal_value)
+
+    def __repr__(self):
+        return self.__class__.__name__ + ": " + str(self.internal_value)
+
+    # @classmethod
+    # def __mul__(cls, other):
+    #     return SL([cls() for _ in range(int(other))])
+    #
+    # @classmethod
+    # def __rmul__(cls, other):
+    #     return SL([cls() for _ in range(int(other))])
 
 
 class EMPTY(BaseType):
