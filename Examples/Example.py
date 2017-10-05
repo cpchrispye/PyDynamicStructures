@@ -5,10 +5,9 @@ import math
 if __name__ == "__main__":
     class SelfStruct(Structure):
 
-        def build(self):
+        def structure(self):
             root = self.root()
             self.command = UINT32()
-            yield
 
             if self.command > 100:
                 self.type = UINT64()
@@ -18,10 +17,10 @@ if __name__ == "__main__":
 
 
 
-    class DynamicArray(Selector):
-        def select(self, **kwargs):
-            size     = get_variable(self.root(), kwargs['length'])
-            str_type = kwargs['type']()
+    class DynamicArray(Structure):
+        def structure(self):
+            size     = get_variable(self.root(), self.kwargs['length'])
+            str_type = self.kwargs['type']()
             return str_type * size
 
     class sub(Structure):
@@ -47,52 +46,52 @@ if __name__ == "__main__":
             self.options = SelfStruct()
             self.data = DynamicArray(length='length', type=UINT8)
 
-    class MyBit(StructureBit):
-
-        def __init__(self, size=None):
-            self.__size = size
-            self.f1 = BitField(3)
-            self.f2 = BitField(3)
-            self.f3 = BitField(1)
-            self.f4 = BitField(5)
-
-        def pack(self):
-            val = 0
-            size = self.size()
-            bytes_size =  math.ceil(size /8.0)
-            for item in self.values():
-                val |= item.pack()
-            out = []
-            for i in xrange(bytes_size):
-                out.append(255 & (val >> (8 ** i)))
-            return bytes(out)
-
-        def unpack(self, buffer=None, offset=0):
-            index = offset
-            bits = 0
-            for item in self.values():
-                bits += item.unpack(buffer, bits)
-            return index - bit_size_in_bytes(bits)
-
-        def size(self):
-            if self.__size is None:
-                return bit_size_in_bytes(super(MyBit, self).size())
-            return self.__size
+    # class MyBit(StructureBit):
+    #
+    #     def __init__(self, size=None):
+    #         self.__size = size
+    #         self.f1 = BitField(3)
+    #         self.f2 = BitField(3)
+    #         self.f3 = BitField(1)
+    #         self.f4 = BitField(5)
+    #
+    #     def pack(self):
+    #         val = 0
+    #         size = self.size()
+    #         bytes_size =  math.ceil(size /8.0)
+    #         for item in self.values():
+    #             val |= item.pack()
+    #         out = []
+    #         for i in xrange(bytes_size):
+    #             out.append(255 & (val >> (8 ** i)))
+    #         return bytes(out)
+    #
+    #     def unpack(self, buffer=None, offset=0):
+    #         index = offset
+    #         bits = 0
+    #         for item in self.values():
+    #             bits += item.unpack(buffer, bits)
+    #         return index - bit_size_in_bytes(bits)
+    #
+    #     def size(self):
+    #         if self.__size is None:
+    #             return bit_size_in_bytes(super(MyBit, self).size())
+    #         return self.__size
 
 
 
     data = ''.join(['%02x' % i for i in range(255)])
     header_data = data.decode("hex")
 
-    mb = MyBit()
+    #mb = MyBit()
 
-    mb.unpack('zbcd')
-    out = mb.pack()
-    print(out)
+    #mb.unpack('zbcd')
+    #out = mb.pack()
+    #print(out)
     hd = EncapsulationHeader()#.build_with_values(0,5,2,3,4,5,6,7,8,9,10,11,12,13,14)
 
     hd.unpack(header_data)
-    v = hd.command
+    v = hd.data
     d = hd.pack()
     print(d.encode('hex'))
     print(data)

@@ -1,6 +1,7 @@
 import weakref
 import math
 from struct import unpack, pack, calcsize
+from PyDynamicStructures.utils import MasterValues, MasterBuffer
 from PyDynamicStructures.dynamic_structure import StructureList as SL
 from PyDynamicStructures.descriptors import DynamicDescriptor
 from PyDynamicStructures.utils import *
@@ -51,9 +52,11 @@ class BaseType(DynamicDescriptor):
         return parent.get_path() + [self]
 
     def set_values(self, val):
-        if isinstance(val[0], (tuple, list, dict)):
-            raise BaseTypeError(self, "values to be set are a sequence or dict need to be int or char")
-        self.internal_value = val[0]
+        value = val
+        if isinstance(val, MasterValues):
+            value = val.values[val.offset]
+            val.offset += 1
+        self.internal_value = value
         return 1
 
     def pack(self):
@@ -62,19 +65,26 @@ class BaseType(DynamicDescriptor):
         except Exception as e:
             raise BaseTypeError(self, "pack error class %s, value %s, message: %s" % (str(self.internal_value), str(e)))
 
-    def unpack(self, buffer=None, offset=0):
+    def unpack(self, buffer=None):
         if buffer is not None:
-            self.__offset = offset
+            if not isinstance(buffer, MasterBuffer):
+                buffer = MasterBuffer(buffer, 0)
             self.__buffer = buffer
+            self.__buffer_offset = self.__buffer.offset
+        else:
+            self.__buffer.offset = self.__buffer_offset
+
         try:
-            vals = unpack(self.BASEENDIAN + self.BASEFORMAT, self.__buffer[self.__offset:self.__offset + self.size()])
+            size = self.size()
+            vals = unpack(self.BASEENDIAN + self.BASEFORMAT, self.__buffer.buffer[self.__buffer.offset:self.__buffer.offset + size])
         except Exception as e:
             raise BaseTypeError(self, "unpack error class %s, value %s, message: %s" % (str(self.internal_value), str(e)))
 
         self.internal_value = vals[0]
-        return self.size()
+        self.__buffer.offset += size
+        return size
 
-    def update(self):
+    def update(self, *arg, **kwargs):
         pass
 
     def base_values(self):

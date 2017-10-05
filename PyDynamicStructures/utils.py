@@ -1,4 +1,16 @@
 import math
+from collections import namedtuple
+
+class MasterBuffer(object):
+    def __init__(self, buf=None, off=None):
+        self.buffer=buf
+        self.offset=off
+
+class MasterValues(object):
+    def __init__(self, val=None, off=None):
+        self.values=val
+        self.offset=off
+
 
 def bit_size_in_bytes(size):
     return int(math.ceil(size//8))
