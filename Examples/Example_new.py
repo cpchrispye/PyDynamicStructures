@@ -23,7 +23,7 @@ class sub_header(StructureClass):
 
 enip = EncapsulationHeader()
 enip.command = 10
-enip.refresh()
+enip.rebuild()
 m = enip.structured_values
 
 i=1

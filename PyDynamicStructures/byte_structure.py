@@ -19,7 +19,7 @@ class VirtualStructure(object):
         pass
 
     @abstractmethod
-    def _update(self, key, value):
+    def _rebuild(self, key, value):
         pass
 
     @abstractmethod
@@ -52,7 +52,7 @@ class BaseStructure(VirtualStructure):
         value.set_parent(self)
         if hasattr(self._state_, 'set_method') and self._state_.set_method is not None:
             method, args, kwargs = self._state_.set_method
-            method(key, value, *args, **kwargs)
+            getattr(value, method)(key, value, *args, **kwargs)
 
     def build(self, method, *args, **kwargs):
         self.set_process_attribute(method, *args, **kwargs)
@@ -74,7 +74,7 @@ class BaseStructure(VirtualStructure):
         val.set_parent(self)
         if self._state_.set_method is not None:
             method, args, kwargs = self._state_.set_method
-            method(key, val, *args, **kwargs)
+            getattr(val, method)(key, val, *args, **kwargs)
 
     def set_process_attribute(self, method, *args, **kwargs):
         if method is None:
@@ -101,13 +101,13 @@ class BaseStructure(VirtualStructure):
         else:
             self._state_.buffer.offset = self._state_.buffer_offset
 
-        result = self.build(self._unpack, self._state_.buffer)
+        result = self.build('_unpack', self._state_.buffer)
 
-    def refresh(self):
-        self.build(self._update)
+    def rebuild(self):
+        self.build('_rebuild')
 
     def set_values(self, values):
-        self.build(self._set_values, MasterValues(values, 0))
+        self.build('_set_values', MasterValues(values, 0))
 
     def _pack(self):
         out = bytes()
@@ -118,11 +118,11 @@ class BaseStructure(VirtualStructure):
     def _unpack(self, key, value, buffer_wrapper):
         value.unpack(buffer_wrapper)
 
-    def _update(self, key, value, old_vals=None):
+    def _rebuild(self, key, value, old_vals=None):
         if old_vals is not None:
             value.set_values(old_vals.get(key))
         else:
-            value.refresh()
+            value.rebuild()
 
     def _set_values(self, key, value, value_wrapper):
         if isinstance(value_wrapper.values, list):

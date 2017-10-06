@@ -65,7 +65,7 @@ class BaseType(VirtualStructure, MetaItem):
     def refresh(self):
         pass
 
-    def _update(self, key, value):
+    def _rebuild(self, key, value):
         pass
 
     def set_values(self, value_wrapper):
