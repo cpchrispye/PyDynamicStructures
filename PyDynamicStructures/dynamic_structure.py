@@ -1,302 +1,278 @@
-from PyDynamicStructures.descriptors import DynamicDescriptor, ClassDesc, ListDesc, GETTER, SETTER
-from PyDynamicStructures.utils import MasterValues, MasterBuffer
-from collections import Sequence, OrderedDict
-import weakref
-import types
-import copy
+from PyDynamicStructures.descriptors import DescriptorDictClass, DescriptorList
 
-__all__ = ['Structure', 'StructureList', 'Selector', 'StructureBit', 'sizeof', 'get_variable']
+from abc import ABCMeta, abstractmethod, abstractproperty
+from PyDynamicStructures.utils import *
+from collections import OrderedDict, Mapping
 
-def sizeof(struct):
-    return struct.size()
+class VirtualStructure(object):
+    __metaclass__ = ABCMeta
 
-def get_variable(root, path):
-    if path[0] == '.':
-        path = path[1:]
-    attr_names = path.split('.')
-    try:
-        this_dir = root
-        for attr_name in attr_names:
-            this_dir = getattr(this_dir, attr_name)
-    except AttributeError as e:
-        raise AttributeError("Cannot find dir %s %s: message %s" % (attr_name, path, str(e)))
-    return this_dir
+    @abstractproperty
+    def structured_values(self):
+        pass
+
+    @abstractmethod
+    def _pack(self):
+        pass
+
+    @abstractmethod
+    def _unpack(self, key, value, buffer_wrapper):
+        pass
+
+    @abstractmethod
+    def _set_values(self, key, value, value_wrapper):
+        pass
+
+    @abstractmethod
+    def set_parent(self, parent):
+        pass
+
+    @abstractmethod
+    def size(self):
+        pass
 
 
+class BaseStructure(VirtualStructure):
+    __metaclass__ = ABCMeta
 
-class StructureBase(object):
+    @abstractproperty
+    def m(self):
+        pass
 
-    def __init__(self, *args, **kwargs):
-        self.args   = args
-        self.kwargs = kwargs
+    @abstractproperty
+    def s(self):
+        pass
 
-    def __alt_init__(self):
-        self.__method = None
-        self.store.set_hook(self)
-
-    @property
-    def attributes(self):
-        return self.store.dict()
-
-    @property
-    def store(self):
-        raise Exception("store needs defining")
-        return #type: AttributeStore
-
-    @property
-    def has_dynamic_structure(self):
-        return hasattr(self, 'structure')
+    def _set_hook_(self, key, value):
+        if not isinstance(value, VirtualStructure):
+            raise Exception("Only subclasses of VirtualStructure allowed to be set")
+        value.set_parent(self)
+        if hasattr(self.s, 'set_method') and self.s.set_method is not None:
+            method, args, kwargs = self.s.set_method
+            getattr(value, method)(key, *args, **kwargs)
 
     def build(self, method, *args, **kwargs):
         self.set_process_attribute(method, *args, **kwargs)
-        if self.has_dynamic_structure:
-            self.__old_structure = self.get_struc_values()
-            self.store.clear()
-            result = self.structure()
-            if result is not None:
-                self._internal_value = result
-                self.make_descriptor()
-        for key, val in self.store.items():
-            self.process_attribute(key, val)
+        if hasattr(self, 'structure'):
+            self.m.clear()
+            self.structure()
+        else:
+            for key, val in self.m.items():
+                self.process_attribute(key, val)
         self.set_process_attribute(None)
 
-    def set_parent(self, parent):
-        self._parent = weakref.ref(parent)
-        #parent.update()
+    def process_attribute(self, key, val):
+        val.set_parent(self)
+        if self.s.set_method is not None:
+            method, args, kwargs = self.s.set_method
+            getattr(val, method)(key, *args, **kwargs)
 
-    def get_parent(self):
-        try:
-            return self._parent()
-        except AttributeError:
-            return None
+    def set_process_attribute(self, method, *args, **kwargs):
+        if method is None:
+            self.s.set_method = None
+        else:
+            self.s.set_method = (method, args, kwargs)
 
-    def root(self):
-        return self.path()[0]
-
-    def path(self):
-        parent = self.get_parent()
-        if parent is None:
-            return [self]
-        return parent.path() + [self]
+    @property
+    def structured_values(self):
+        out = OrderedDict()
+        for key, val in self.m.items():
+            out[key] = val.structured_values
+        return out
 
     def pack(self):
-        out = bytes()
-        for struct in self.store.values():
-            out += struct.pack()
-        return out
+        return self._pack()
 
     def unpack(self, buffer=None):
         if buffer is not None:
             if not isinstance(buffer, MasterBuffer):
                 buffer = MasterBuffer(buffer, 0)
-            self.__buffer = buffer
-            self.__buffer_offset = self.__buffer.offset
+            self.s.buffer = buffer
+            self.s.buffer_offset = buffer.offset
         else:
-            self.__buffer.offset = self.__buffer_offset
+            self.s.buffer.offset = self.s.buffer_offset
 
-        result = self.build('_unpack', self.__buffer)
+        result = self.build('_unpack', self.s.buffer)
 
-
-    def _unpack(self, key, val, master_buffer):
-        val.unpack(master_buffer)
-
-    def update(self):
-        self.build('_update')
-
-    def _update(self, key, val):
-        if self.has_dynamic_structure:
-            values = self.__old_structure.get(key)
-            val.set_values(values)
-        else:
-            val.update()
+    def rebuild(self):
+        self.build('_set_values', self.structured_values)
 
     def set_values(self, values):
-        if values is not None:
-            if not isinstance(values, MasterValues):
-                values = MasterValues(values, 0)
-            self.__values = values
-            self.__values_offset = self.__values.offset
+        if isinstance(values, list):
+            self.build('_set_values', MasterValues(values, 0))
+        elif isinstance(values, (dict, OrderedDict)):
+            self.build('_set_values', values)
         else:
-            self.__values.offset = self.__values_offset
+            raise Exception('values must be a lis or a dict not %s' % values.__class__.__name__)
 
-        result = self.build('_set_values', self.__values)
+    def _pack(self):
+        out = bytes()
+        for item in self.m.values():
+            out += item._pack()
+        return out
 
-    def _set_values(self, key, val, master_values):
-        if isinstance(master_values.values, list):
-            val.set_values(master_values)
+    def _unpack(self, key, buffer_wrapper):
+        self.build('_unpack', buffer_wrapper)
+
+    def _set_values(self, key, value_wrapper):
+        if isinstance(value_wrapper, MasterValues):
+            self.build('_set_values', value_wrapper)
+        elif isinstance(value_wrapper, (dict, OrderedDict)):
+            self.build('_set_values', value_wrapper.get(key, {}))
         else:
-            val.set_values(master_values.values[key])
+            raise Exception('values must be a list or a dict not %s' % value_wrapper.values.__class__.__name__)
 
-    def process_attribute(self, key, val):
-        val.set_parent(self)
-        if self.__method is not None:
-            method, args, kwargs = self.__method
-            getattr(self, method)(key, val, *args, **kwargs)
+    def set_parent(self, parent):
+        self.s.parent = parent
 
-    def set_process_attribute(self, method, *args, **kwargs):
-        if method is None:
-            self.__method = None
-        else:
-            self.__method = (method, args, kwargs)
+    def get_parent(self):
+        try:
+            return self.s.parent
+        except AttributeError:
+            return None
+
+    def root(self):
+        return self.get_parents()[0]
+
+    def get_parents(self):
+        parent = self.get_parent()
+        if parent is None:
+            return [self]
+        return parent.path() + [self]
+
+    def size(self):
+        out = 0
+        for val in self.m:
+            out += val.size()
+        return out
 
     def __repr__(self):
         out = []
-        for key, val in self.store.items():
+        for key, val in self.m.items():
             out.append("%s: %s" % (str(key), val.__class__.__name__))
         return ', '.join(out)
+
+    @property
+    def hex(self):
+        return self._pack().encode('hex')
 
     # def __str__(self):
     #     return self.str_struct()
 
     def __mul__(self, other):
-        return StructureList([self() for _ in range(int(other))])
+        return StructureList([type(self).from_values(self.structured_values) for _ in range(int(other))])
 
     def __rmul__(self, other):
-        return StructureList([self() for _ in range(int(other))])
+        return StructureList([type(self).from_values(self.structured_values) for _ in range(int(other))])
 
 
-class Structure(ClassDesc, StructureBase):
-    _fields_ = []
-
-    def __new__(cls, *args, **kwargs):
-        new_instance = super(Structure, cls).__new__(cls)
-        new_instance.__alt_init__()
-        new_instance.add_fields(cls._fields_)
-        return new_instance
+class StructureClass(DescriptorDictClass, BaseStructure):
 
     @classmethod
     def from_values(cls, *args, **kwargs):
-        new_instance = cls()
-        values = list(args)
-        if len(values) == 0:
-            values = dict(kwargs)
-        if len(values):
-            new_instance.set_values(values)
-        return new_instance
+        ins = cls()
+        if args:
+            ins.set_values(args)
+        elif kwargs:
+            ins.set_values(kwargs)
+        return ins
+
+
+class StructureList(DescriptorList, BaseStructure):
+
+    @classmethod
+    def from_values(cls, *args, **kwargs):
+        ins = cls()
+        if args:
+            ins.set_values(args)
+        elif kwargs:
+            ins.set_values(kwargs)
+        return ins
+
+    def __init__(self, seq=None):
+        if seq is not None:
+            for i in seq:
+                self.append(i)
 
     @property
-    def store(self):
-        return self._store_#type: AttributeStore
+    def structured_values(self):
+        out = list()
+        for val in self.m:
+            out.append(val.structured_values)
+        return out
 
-    def add_field(self, name, type_val, length=None):
-        if isinstance(type(type_val), type):
-            type_val = type_val()
+class StructureSelector(VirtualStructure):
+    __metaclass__ = ABCMeta
 
-        if length is None:
-            setattr(self, name, type_val)
-        elif length is not None:
-            setattr(self, name, type_val * length)
-        return (name, type_val)
-
-    def add_fields(self, fields):
-        for field in fields:
-            if len(field) == 3:
-                name, type, length = field
-            elif len(field) == 2:
-                name, type = field
-                length = None
-            else:
-                raise Exception("_fields_ takes 2 or 3 colomns")
-            self.add_field(name, type, length)
-
-
-class StructureList(ListDesc, StructureBase):
-
-    @property
-    def store(self):
-        return self
-
-    def values(self):
-        return self
-
-    def keys(self):
-        return range(len(self))
-
-    def clear(self, item=None):
-        if item is None:
-            del self[:]
-        else:
-            self.remove(item)
-
-
-class Selector(DynamicDescriptor, StructureBase):
-
-    def __init__(self, **kwargs):
+    def __init__(self, *args, **kwargs):
+        self.args = args
         self.kwargs = kwargs
         self.internal_value = None
 
-    def select(self, **kwargs):
-        raise Exception("select method needs defining")
+    @abstractmethod
+    def structure(self):
+        pass
 
-    def __dget__(self, instance, owner):
+    @property
+    def structured_values(self):
+        return self.internal_value.structured_values
+
+    def _pack(self):
+        return self.internal_value._pack()
+
+    def _unpack(self, key, buffer_wrapper):
+        self.internal_value = self.structure()
+        return self.internal_value._unpack(key, buffer_wrapper)
+
+    def _set_values(self, key, value_wrapper):
+        self.internal_value = self.structure()
+        return self.internal_value._unpack(key, value_wrapper)
+
+    def set_parent(self, parent):
+        self.parent = parent
+        self.internal_value = self.structure()
+
+    def get_parent(self):
+        try:
+            return self.parent
+        except AttributeError:
+            return None
+
+    def root(self):
+        return self.get_parents()[0]
+
+    def get_parents(self):
+        parent = self.get_parent()
+        if parent is None:
+            return [self]
+        return parent.get_parents() + [self]
+
+    def size(self):
+        if self.internal_value is None:
+            return 0
+        return self.internal_value.size()
+
+    def _getter_(self, instance):
         return self.internal_value
 
-    def __dset__(self, instance, value):
-        raise AttributeError("Cannot set Selector")
 
-    def set_values(self, values):
-        self.update_selectors()
-        return self.internal_value.set_values(values)
+class Array(StructureSelector):
 
-    def values(self):
-        return self.internal_value.values()
-
-    def keys(self):
-        return self.internal_value.keys()
+    def __init__(self, length_path, type):
+        self.length_path = length_path
+        self.type = type
 
     def structure(self):
-        return self.internal_value.structure()
-
-    def update(self):
-        self.internal_value = self.select(**self.kwargs)
-
-    def pack(self):
-        if self.internal_value is None:
-            raise Exception("Selector needs to be initialized call unpack() on it")
-        return self.internal_value.pack()
-
-    def unpack(self, buffer=None, offset=0):
-        if buffer is not None:
-            self._offset = offset
-            self._buffer = buffer
-        if self._buffer is None:
-            raise Exception('unpack must be call with buffer at least once')
-        index = self._offset
-        self.internal_value = self.select(**self.kwargs)
-        index + self.internal_value.unpack(self._buffer, index)
-        return index
-
-    def base_values(self):
-        return self.internal_value.base_values()
-
-    def get_format(self):
-        out = []
-        for struct in self.internal_value.values():
-            out += struct.get_format()
-        return out
-
-
-class StructureBit(ClassDesc, StructureBase):
-    STORE = OrderedDict
-
-    def clear(self, item=None):
-        if item is None:
-            self._store_.clear()
-        else:
-            del self._store_[item]
-
-    def values(self):
-        return self._store_.values()
-
-    def keys(self):
-        return self._store_.keys()
-
-    def items(self):
-        return self._store_.items()
+        length = get_variable(self, self.length_path)
+        return self.type() * length
 
 
 
+if __name__ =='__main__':
+    class enip(StructureClass):
+        pass
+    a = StructureClass()
+    a.fred = enip()
+    m = a.m
 
-
-
-
+    i=1

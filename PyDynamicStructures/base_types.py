@@ -1,13 +1,11 @@
-import weakref
-import math
-from struct import unpack, pack, calcsize
+from PyDynamicStructures.dynamic_structure import VirtualStructure, StructureList
+from PyDynamicStructures.descriptors import DescriptorItem
 from PyDynamicStructures.utils import MasterValues, MasterBuffer
-from PyDynamicStructures.dynamic_structure import StructureList as SL
-from PyDynamicStructures.descriptors import DynamicDescriptor
-from PyDynamicStructures.utils import *
+from struct import pack, unpack, calcsize
+from collections import OrderedDict
 
 __all__ = [ 'BYTE', 'UINT8', 'UINT16', 'UINT32', 'UINT64', 'DOUBLE', 'FLOAT',
-            'BYTE_L', 'UINT8_L', 'UINT16_L', 'UINT32_L', 'UINT64_L', 'DOUBLE_L', 'FLOAT_L',  'EMPTY', 'STRING', 'BaseType', 'BitField']
+            'BYTE_L', 'UINT8_L', 'UINT16_L', 'UINT32_L', 'UINT64_L', 'DOUBLE_L', 'FLOAT_L',  'EMPTY', 'STRING', 'BaseType', ]#'BitField']
 
 class BaseTypeError(Exception):
     def __init__(self, base_object, message):
@@ -15,57 +13,38 @@ class BaseTypeError(Exception):
         message = "object path = %s: message = %s" % (path, message)
         super(BaseTypeError, self).__init__(message)
 
-
-class BaseType(DynamicDescriptor):
-    BASEFORMAT   = ''
-    BASEENDIAN   = '<'
+class BaseType(VirtualStructure, DescriptorItem):
+    BASEFORMAT   = None
     DEFAULTVALUE = 0
-    REPLACE      = True
+    BASEENDIAN   = '<'
+
+    @classmethod
+    def from_values(cls, val):
+        ins = cls(val)
+        return ins
 
     def __init__(self, value=None):
-        self.internal_value = self.DEFAULTVALUE
-        if value is not None:
-            self.internal_value = value
+        self.internal_value = value
+        if self.internal_value is None:
+            self.internal_value = self.DEFAULTVALUE
 
-    def __dget__(self, instance, owner):
+    def _getter_(self, instance):
         return self.internal_value
 
-    def __dset__(self, instance, value):
+    def _setter_(self, instance, value):
         self.internal_value = value
 
-    def __ddelete__(self, instance):
-        raise BaseTypeError(self, "Descriptor __delete__ not overridden correctly ")
+    @property
+    def structured_values(self):
+        return self.internal_value
 
-    def set_parent(self, parent):
-        self.__parent = weakref.ref(parent)
-
-    def get_parent(self):
-        try:
-            return self.__parent()
-        except AttributeError:
-            return None
-
-    def get_path(self):
-        parent = self.get_parent()
-        if parent is None:
-            return [self]
-        return parent.get_path() + [self]
-
-    def set_values(self, val):
-        value = val
-        if isinstance(val, MasterValues):
-            value = val.values[val.offset]
-            val.offset += 1
-        self.internal_value = value
-        return 1
-
-    def pack(self):
+    def _pack(self):
         try:
             return pack(self.BASEENDIAN + self.BASEFORMAT, self.internal_value)
         except Exception as e:
             raise BaseTypeError(self, "pack error class %s, value %s, message: %s" % (str(self.internal_value), str(e)))
 
-    def unpack(self, buffer=None):
+    def _unpack(self, key, buffer=None):
         if buffer is not None:
             if not isinstance(buffer, MasterBuffer):
                 buffer = MasterBuffer(buffer, 0)
@@ -84,142 +63,55 @@ class BaseType(DynamicDescriptor):
         self.__buffer.offset += size
         return size
 
-    def update(self, *arg, **kwargs):
+    def _rebuild(self, key):
         pass
 
-    def base_values(self):
-        return [self.internal_value]
-
-
-    @classmethod
-    def get_format(cls):
-        return [cls.BASEFORMAT]
-
-    @classmethod
-    def size(cls):
-        return calcsize(cls.BASEENDIAN + cls.BASEFORMAT)
-
-    def __str__(self):
-        return str(self.internal_value)
-
-    def __repr__(self):
-        return self.__class__.__name__ + ": " + str(self.internal_value)
-
-    @classmethod
-    def __mul__(cls, other):
-        return SL([cls() for _ in range(int(other))])
-
-    @classmethod
-    def __rmul__(cls, other):
-        return SL([cls() for _ in range(int(other))])
-
-class BitField(DynamicDescriptor):
-    BASEFORMAT   = 'c'
-    BASEENDIAN   = '<'
-    DEFAULTVALUE = 0
-    REPLACE      = True
-
-
-    def __init__(self, size):
-        self.internal_value = self.DEFAULTVALUE
-        self.__size = size
-        self.__offset = None
-
-    def __dget__(self, instance, owner):
-        return self.internal_value
-
-    def __dset__(self, instance, value):
-        self.internal_value = value
-
-    def __ddelete__(self, instance):
-        raise BaseTypeError(self, "Descriptor __delete__ not overridden correctly ")
+    def _set_values(self, key, value_wrapper):
+        if isinstance(value_wrapper, MasterValues):
+            self.internal_value = value_wrapper.values[value_wrapper.offset]
+            value_wrapper.offset += 1
+        elif isinstance(value_wrapper, (dict, OrderedDict)):
+            if key in value_wrapper:
+                self.internal_value = value_wrapper[key]
 
     def set_parent(self, parent):
-        self.__parent = weakref.ref(parent)
-
-    def get_parent(self):
-        try:
-            return self.__parent()
-        except AttributeError:
-            return None
-
-    def get_path(self):
-        parent = self.get_parent()
-        if parent is None:
-            return [self]
-        return parent.get_path() + [self]
-
-    def set_values(self, val):
-        if isinstance(val[0], (tuple, list, dict)):
-            raise BaseTypeError(self, "values to be set are a sequence or dict need to be int or char")
-        self.internal_value = val[0]
-        return 1
-
-    def pack(self):
-        try:
-            mask = (1 << self.__size + 1) - 1
-            return (mask & self.internal_value) << self.__offset
-        except Exception as e:
-            raise BaseTypeError(self, "pack error class %s, value %s, message: %s" % (str(self.internal_value), str(e)))
-
-    def unpack(self, buffer=None, bit_offset=0):
-        buffer = bytes(buffer)
-        if buffer is not None:
-            self.__offset = bit_offset
-            self.__buffer = buffer
-        try:
-            offset = bit_offset // 8
-            self.internal_value  = bytes_to_bit(self.__buffer, self.size(), offset, bit_offset)
-        except Exception as e:
-            raise BaseTypeError(self, "unpack error class %s, value %s, message: %s" % (str(self.internal_value), str(e)))
-        return self.size()
-
-    def update(self):
-        pass
-
-    def base_values(self):
-        return [self.internal_value]
+        self.__parent = parent
 
     def size(self):
-        return self.__size
+        return calcsize(self.BASEFORMAT)
 
-    @classmethod
-    def get_format(cls):
-        return [cls.BASEFORMAT]
+    @property
+    def hex(self):
+        return self._pack().encode('hex')
 
-    def __str__(self):
-        return str(self.internal_value)
+    def __mul__(self, other):
+        return StructureList([type(self).from_values(self.internal_value) for _ in range(int(other))])
 
-    def __repr__(self):
-        return self.__class__.__name__ + ": " + str(self.internal_value)
-
-    # @classmethod
-    # def __mul__(cls, other):
-    #     return SL([cls() for _ in range(int(other))])
-    #
-    # @classmethod
-    # def __rmul__(cls, other):
-    #     return SL([cls() for _ in range(int(other))])
-
+    def __rmul__(self, other):
+        return StructureList([type(self).from_values(self.internal_value) for _ in range(int(other))])
 
 class EMPTY(BaseType):
     BASEFORMAT = ''
     DEFAULTVALUE = None
 
-    def __dget__(self, instance, owner):
+    def _getter_(self, instance):
         return None
 
-    def __dset__(self, instance, value):
+    def _setter_(self, instance, value):
         pass
 
-    def set_values(self, val):
-        return 0
+    def _pack(self):
+        pass
 
-    def unpack(self, buffer, offset=0):
-        return 0
+    def _unpack(self, key, value, buffer_wrapper):
+        pass
 
-    def pack(self):
-        return bytes()
+    def _set_values(self, key, value, value_wrapper):
+        pass
+
+
+    def size(self):
+        return 0
 
 
 class BigEndian(BaseType):
@@ -329,4 +221,3 @@ class DOUBLE_L(LittleEndian):
 
 class STRING_L(LittleEndian):
     BASEFORMAT = 's'
-
