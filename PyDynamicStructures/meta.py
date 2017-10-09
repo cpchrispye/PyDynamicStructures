@@ -119,6 +119,14 @@ class ListStore(MutableSequence):
     def setattr(self, key, value):
         self.__setitem__(key, value)
 
+    def keys(self):
+        return range(len(self))
+
+    def values(self):
+        return self
+
+    def items(self):
+        return zip(self.keys(), self.values())
 
 class StateDict(object):
 
@@ -133,6 +141,10 @@ class MetaClass(MetaBase):
     @property
     def m(self):
         return self._state_.store
+
+    @property
+    def s(self):
+        return self._state_
 
     def __getattr__(self, item):
         if item == '_state_':
@@ -169,6 +181,10 @@ class MetaList(MutableSequence, MetaBase):
     @property
     def m(self):
         return self._state_.store
+
+    @property
+    def s(self):
+        return self._state_
 
     def __getattr__(self, item):
         if item == '_state_':
@@ -213,6 +229,10 @@ class MetaDict(MutableMapping, MetaBase):
     @property
     def m(self):
         return self._state_.store
+
+    @property
+    def s(self):
+        return self._state_
 
     def __getattr__(self, item):
         if item == '_state_':

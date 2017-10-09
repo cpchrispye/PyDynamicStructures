@@ -21,9 +21,20 @@ class sub_header(StructureClass):
         else:
             self.j = UINT16() * 3
 
+
+
+
+data = ''.join(['%02x' % i for i in range(255)])
+header_data = data.decode("hex")
+
 enip = EncapsulationHeader()
 enip.command = 10
 enip.rebuild()
+enip.unpack(header_data)
+datap = enip.pack()
+
+print(datap.encode('hex'))
+print(data)
 m = enip.structured_values
 
 i=1

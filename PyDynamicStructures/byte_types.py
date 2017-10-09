@@ -2,6 +2,7 @@ from PyDynamicStructures.byte_structure import VirtualStructure, StructureList
 from PyDynamicStructures.meta import MetaItem
 from PyDynamicStructures.utils import MasterValues, MasterBuffer
 from struct import pack, unpack, calcsize
+from collections import OrderedDict
 
 __all__ = [ 'BYTE', 'UINT8', 'UINT16', 'UINT32', 'UINT64', 'DOUBLE', 'FLOAT',
             'BYTE_L', 'UINT8_L', 'UINT16_L', 'UINT32_L', 'UINT64_L', 'DOUBLE_L', 'FLOAT_L',  'EMPTY', 'STRING', 'BaseType', 'BitField']
@@ -43,7 +44,7 @@ class BaseType(VirtualStructure, MetaItem):
         except Exception as e:
             raise BaseTypeError(self, "pack error class %s, value %s, message: %s" % (str(self.internal_value), str(e)))
 
-    def _unpack(self, buffer=None):
+    def _unpack(self, key, buffer=None):
         if buffer is not None:
             if not isinstance(buffer, MasterBuffer):
                 buffer = MasterBuffer(buffer, 0)
@@ -62,33 +63,26 @@ class BaseType(VirtualStructure, MetaItem):
         self.__buffer.offset += size
         return size
 
-    def refresh(self):
+    def _rebuild(self, key):
         pass
 
-    def _rebuild(self, key, value):
-        pass
-
-    def set_values(self, value_wrapper):
-        m_val = value_wrapper
-        if isinstance(m_val, MasterValues):
-            m_val = m_val.values[m_val.offset]
-            m_val.offset += 1
-        self.internal_value = m_val
-        return 1
-
-    def _set_values(self, key, value, value_wrapper):
-        m_val = value
-        if isinstance(m_val, MasterValues):
-            m_val = m_val.values[m_val.offset]
-            m_val.offset += 1
-        self.internal_value = m_val
-        return 1
+    def _set_values(self, key, value_wrapper):
+        if isinstance(value_wrapper, MasterValues):
+            self.internal_value = value_wrapper.values[value_wrapper.offset]
+            value_wrapper.offset += 1
+        elif isinstance(value_wrapper, (dict, OrderedDict)):
+            if key in value_wrapper:
+                self.internal_value = value_wrapper[key]
 
     def set_parent(self, parent):
         self.__parent = parent
 
     def size(self):
-        return [calcsize(self.BASEFORMAT)]
+        return calcsize(self.BASEFORMAT)
+
+    @property
+    def hex(self):
+        return self._pack().encode('hex')
 
     def __mul__(self, other):
         return StructureList([type(self).from_values(self.internal_value) for _ in range(int(other))])
