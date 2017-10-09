@@ -6,6 +6,7 @@ from collections import OrderedDict, Mapping
 
 class VirtualStructure(object):
     __metaclass__ = ABCMeta
+    __slots__ = ()
 
     @abstractproperty
     def structured_values(self):
@@ -34,6 +35,7 @@ class VirtualStructure(object):
 
 class BaseStructure(VirtualStructure):
     __metaclass__ = ABCMeta
+    __slots__ = ()
 
     @abstractproperty
     def m(self):
@@ -140,6 +142,9 @@ class BaseStructure(VirtualStructure):
             return [self]
         return parent.path() + [self]
 
+    def get_variable(self, path):
+        return get_variable(self, path)
+
     def size(self):
         out = 0
         for val in self.m:
@@ -167,6 +172,7 @@ class BaseStructure(VirtualStructure):
 
 
 class StructureClass(DescriptorDictClass, BaseStructure):
+    __slots__ = ()
 
     @classmethod
     def from_values(cls, *args, **kwargs):
@@ -179,6 +185,7 @@ class StructureClass(DescriptorDictClass, BaseStructure):
 
 
 class StructureList(DescriptorList, BaseStructure):
+    __slots__ = ()
 
     @classmethod
     def from_values(cls, *args, **kwargs):
@@ -247,6 +254,9 @@ class StructureSelector(VirtualStructure):
             return [self]
         return parent.get_parents() + [self]
 
+    def get_variable(self, path):
+        return get_variable(self, path)
+
     def size(self):
         if self.internal_value is None:
             return 0
@@ -263,8 +273,68 @@ class Array(StructureSelector):
         self.type = type
 
     def structure(self):
-        length = get_variable(self, self.length_path)
+        length = self.get_variable(self.length_path)
         return self.type() * length
+
+
+class BitElement(VirtualStructure):
+    def __init__(self, bit_size):
+        self.internal_value = None
+        self.bit_size = bit_size
+
+    def _pack(self):
+        mask = (0x01 << self.bit_size + 1) - 1
+        return self.internal_value & mask
+
+    def _unpack(self, key, buffer=None):
+        if buffer is not None:
+            if not isinstance(buffer, MasterBuffer):
+                buffer = MasterBuffer(buffer, 0)
+            self.__buffer = buffer
+            self.__buffer_offset = self.__buffer.offset
+        else:
+            self.__buffer.offset = self.__buffer_offset
+
+        try:
+            size = self.size()
+            vals = unpack(self.BASEENDIAN + self.BASEFORMAT, self.__buffer.buffer[self.__buffer.offset:self.__buffer.offset + size])
+        except Exception as e:
+            raise BaseTypeError(self, "unpack error class %s, value %s, message: %s" % (str(self.internal_value), str(e)))
+
+        self.internal_value = vals[0]
+        self.__buffer.offset += size
+        return size
+
+    def size(self):
+        return self.bit_size
+
+
+class BitStructure(StructureClass):
+
+    def _pack(self):
+        val = 0
+        size = self.size()
+        bytes_size = math.ceil(size / 8.0)
+        for item in self.m.values():
+            val <<= item.size()
+            val |= item._pack()
+        out = []
+        for i in range(bytes_size):
+            out.append(255 & (val >> (8 ** i)))
+        return bytes(out)
+
+    def _unpack(self, key, buffer_wrapper):
+        buffer_wrapper.bit_offset = 0
+        self.build('_unpack', buffer_wrapper)
+        index = offset
+        bits = 0
+        for item in self.values():
+            bits += item.unpack(buffer, bits)
+        return index - bit_size_in_bytes(bits)
+
+    def set_size(self, byte_size):
+        self.s.byte_size = byte_size
+
 
 
 

@@ -14,6 +14,7 @@ class BaseTypeError(Exception):
         super(BaseTypeError, self).__init__(message)
 
 class BaseType(VirtualStructure, DescriptorItem):
+    __slots__    = ('internal_value', '__buffer', '__buffer_offset', '__parent')
     BASEFORMAT   = None
     DEFAULTVALUE = 0
     BASEENDIAN   = '<'
@@ -90,6 +91,12 @@ class BaseType(VirtualStructure, DescriptorItem):
     def __rmul__(self, other):
         return StructureList([type(self).from_values(self.internal_value) for _ in range(int(other))])
 
+    def __repr__(self):
+        return '%s: %s' % (self.__class__.__name__, str(self.internal_value))
+
+    def __str__(self):
+        return str(self.internal_value)
+
 class EMPTY(BaseType):
     BASEFORMAT = ''
     DEFAULTVALUE = None
@@ -115,14 +122,17 @@ class EMPTY(BaseType):
 
 
 class BigEndian(BaseType):
+    __slots__ = ()
     BASEENDIAN = '>'
 
 
 class LittleEndian(BaseType):
+    __slots__ = ()
     BASEENDIAN = '<'
 
 
 class BYTE(BigEndian):
+    __slots__ = ()
     BASEFORMAT = 'c'
     DEFAULTVALUE = '\0'
 
@@ -131,93 +141,116 @@ class BYTE(BigEndian):
 
 
 class UINT8(BigEndian):
+    __slots__ = ()
     BASEFORMAT = 'B'
 
 
 class UINT16(BigEndian):
+    __slots__ = ()
     BASEFORMAT = 'H'
 
 
 class UINT32(BigEndian):
+    __slots__ = ()
     BASEFORMAT = 'I'
 
 
 class UINT64(BigEndian):
+    __slots__ = ()
     BASEFORMAT = 'Q'
 
 
 class INT8(BigEndian):
+    __slots__ = ()
     BASEFORMAT = 'b'
 
 
 class INT16(BigEndian):
+    __slots__ = ()
     BASEFORMAT = 'h'
 
 
 class INT32(BigEndian):
+    __slots__ = ()
     BASEFORMAT = 'i'
 
 
 class INT64(BigEndian):
+    __slots__ = ()
     BASEFORMAT = 'q'
 
 
 class FLOAT(BigEndian):
+    __slots__ = ()
     BASEFORMAT = 'f'
 
 
 class DOUBLE(BigEndian):
+    __slots__ = ()
     BASEFORMAT = 'd'
 
 
 class STRING(BigEndian):
+    __slots__ = ()
     BASEFORMAT = 's'
 
 
 class BYTE_L(LittleEndian):
+    __slots__ = ()
     BASEFORMAT = 'c'
     DEFAULTVALUE = '\0'
 
 
 class UINT8_L(LittleEndian):
+    __slots__ = ()
     BASEFORMAT = 'B'
 
 
 class UINT16_L(LittleEndian):
+    __slots__ = ()
     BASEFORMAT = 'H'
 
 
 class UINT32_L(LittleEndian):
+    __slots__ = ()
     BASEFORMAT = 'I'
 
 
 class UINT64_L(LittleEndian):
+    __slots__ = ()
     BASEFORMAT = 'Q'
 
 
 class INT8_L(LittleEndian):
+    __slots__ = ()
     BASEFORMAT = 'b'
 
 
 class INT16_L(LittleEndian):
+    __slots__ = ()
     BASEFORMAT = 'h'
 
 
 class INT32_L(LittleEndian):
+    __slots__ = ()
     BASEFORMAT = 'i'
 
 
 class INT64_L(LittleEndian):
+    __slots__ = ()
     BASEFORMAT = 'q'
 
 
 class FLOAT_L(LittleEndian):
+    __slots__ = ()
     BASEFORMAT = 'f'
 
 
 class DOUBLE_L(LittleEndian):
+    __slots__ = ()
     BASEFORMAT = 'd'
 
 
 class STRING_L(LittleEndian):
+    __slots__ = ()
     BASEFORMAT = 's'

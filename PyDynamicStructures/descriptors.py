@@ -6,6 +6,7 @@ SETTER = '_setter_'
 
 class DescriptorItem(object):
     __metaclass__ = ABCMeta
+    __slots__ = ()
 
     @abstractmethod
     def _getter_(self, instance):
@@ -71,6 +72,7 @@ class DictStore(MutableMapping):
 
 
 class ListStore(MutableSequence):
+
     def __init__(self, *args, **kwargs):
         self._store_ = list(*args, **kwargs)
 
@@ -134,7 +136,7 @@ class StateDict(object):
 
 
 class DescriptorClass(object):
-    #__slots__ = ('_state_',)
+    __slots__ = ('_state_')
 
     @property
     def m(self):
@@ -167,7 +169,7 @@ class DescriptorClass(object):
 
 
 class DescriptorDict(MutableMapping, object):
-    #__slots__ = ('_state_',)
+    #__slots__ = ('_state_')
     
     @property
     def m(self):
@@ -212,7 +214,7 @@ class DescriptorDict(MutableMapping, object):
 
 
 class DescriptorDictClass(DescriptorClass, DescriptorDict):
-    #__slots__ = ('_state_',)
+    __slots__ = ()
     pass
 
 
@@ -223,7 +225,7 @@ class StateList(object):
 
 
 class DescriptorList(MutableSequence, object):
-    # __slots__ = ('_state_',)
+    __slots__ = ('_state_')
 
     @property
     def m(self):

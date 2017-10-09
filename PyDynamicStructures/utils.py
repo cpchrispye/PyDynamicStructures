@@ -2,14 +2,16 @@ import math
 from collections import namedtuple
 
 class MasterBuffer(object):
-    def __init__(self, buf=None, off=None):
+    def __init__(self, buf=None, off=None, bit_off=None):
         self.buffer=buf
         self.offset=off
+        self.bit_offset=bit_off
 
 class MasterValues(object):
-    def __init__(self, val=None, off=None):
+    def __init__(self, val=None, off=None, bit_off=None):
         self.values=val
         self.offset=off
+        self.bit_offset=bit_off
 
 
 def sizeof(struct):
