@@ -9,7 +9,7 @@ __all__ = [ 'BYTE', 'UINT8', 'UINT16', 'UINT32', 'UINT64', 'DOUBLE', 'FLOAT',
 
 class BaseTypeError(Exception):
     def __init__(self, base_object, message):
-        path = '.'.join([p.__class__.__name__ for p in base_object.path()])
+        path = '.'.join([p.__class__.__name__ for p in base_object.get_parents()])
         message = "object path = %s: message = %s" % (path, message)
         super(BaseTypeError, self).__init__(message)
 

@@ -132,9 +132,9 @@ class BaseStructure(VirtualStructure):
             return None
 
     def root(self):
-        return self.path()[0]
+        return self.get_parents()[0]
 
-    def path(self):
+    def get_parents(self):
         parent = self.get_parent()
         if parent is None:
             return [self]
@@ -213,19 +213,20 @@ class StructureSelector(VirtualStructure):
     def structure(self):
         pass
 
+    @property
     def structured_values(self):
         return self.internal_value.structured_values
 
     def _pack(self):
-        return self.internal_value._unpack()
+        return self.internal_value._pack()
 
-    def _unpack(self, key, value, buffer_wrapper):
+    def _unpack(self, key, buffer_wrapper):
         self.internal_value = self.structure()
-        return self.internal_value._unpack(key, value, buffer_wrapper)
+        return self.internal_value._unpack(key, buffer_wrapper)
 
-    def _set_values(self, key, value, value_wrapper):
+    def _set_values(self, key, value_wrapper):
         self.internal_value = self.structure()
-        return self.internal_value._unpack(key, value, value_wrapper)
+        return self.internal_value._unpack(key, value_wrapper)
 
     def set_parent(self, parent):
         self.parent = parent
@@ -238,13 +239,13 @@ class StructureSelector(VirtualStructure):
             return None
 
     def root(self):
-        return self.path()[0]
+        return self.get_parents()[0]
 
-    def path(self):
+    def get_parents(self):
         parent = self.get_parent()
         if parent is None:
             return [self]
-        return parent.path() + [self]
+        return parent.get_parents() + [self]
 
     def size(self):
         if self.internal_value is None:
@@ -257,11 +258,13 @@ class StructureSelector(VirtualStructure):
 
 class Array(StructureSelector):
 
-    def __init__(self, var_path, type):
-        self.var_path = var_path
+    def __init__(self, length_path, type):
+        self.length_path = length_path
         self.type = type
 
     def structure(self):
+        length = get_variable(self, self.length_path)
+        return self.type() * length
 
 
 
