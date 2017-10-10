@@ -10,7 +10,7 @@ class EncapsulationHeader(StructureClass):
         self.status         = UINT32()
         self.sender_context = UINT64()
         self.options        = Flags()
-        #self.data           = Array('../length', UINT8)
+        self.data           = Array('../length', UINT8)
 
 class sub_header(StructureClass):
     def structure(self):
@@ -21,7 +21,7 @@ class sub_header(StructureClass):
         else:
             self.j = UINT16() * 3
 
-class Flags(BitStructureL):
+class Flags(BitStructure):
 
     def __init__(self):
         self.a1 = BitElement(2)
@@ -32,7 +32,8 @@ class Flags(BitStructureL):
         self.a6 = BitElement(2)
         self.a7 = BitElement(2)
         self.a8 = BitElement(2)
-
+        self.a9 = BitElement(4)
+        self.set_size(5)
 
 data = ''.join(['%02x' % i for i in range(255)])
 header_data = data.decode("hex")
@@ -42,7 +43,8 @@ yy = '041f'.decode("hex")
 myFlag = Flags()
 myFlag.unpack(yy)
 
-enip = EncapsulationHeader()
+enip = EncapsulationHeader.from_values(command=10,
+                                       length=30)
 enip.command = 10
 enip.rebuild()
 enip.unpack(header_data)

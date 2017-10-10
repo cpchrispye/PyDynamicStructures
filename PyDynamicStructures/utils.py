@@ -55,7 +55,7 @@ def int_to_byte(val):
 
 def bytes_to_int(buffer, size, offset=0, lendian=True):
     buf_cut = buffer[offset:offset + size]
-    if not lendian:
+    if lendian:
         buf_cut = buf_cut[::-1]
     val = 0
     for b in buf_cut:

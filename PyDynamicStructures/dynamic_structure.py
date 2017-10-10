@@ -3,6 +3,7 @@ from PyDynamicStructures.descriptors import DescriptorDictClass, DescriptorList
 from abc import ABCMeta, abstractmethod, abstractproperty
 from PyDynamicStructures.utils import *
 from collections import OrderedDict, Mapping
+from copy import copy
 
 class VirtualStructure(object):
     __metaclass__ = ABCMeta
@@ -87,14 +88,11 @@ class BaseStructure(VirtualStructure):
 
     def unpack(self, buffer=None):
         if buffer is not None:
-            if not isinstance(buffer, MasterBuffer):
-                buffer = MasterBuffer(buffer, 0)
-            self.s.buffer = buffer
-            self.s.buffer_offset = buffer.offset
+            mbuffer = MasterBuffer(buffer, 0)
+            self.s.buffer_cache = copy(mbuffer)
         else:
-            self.s.buffer.offset = self.s.buffer_offset
-
-        result = self.build('_unpack', self.s.buffer)
+            mbuffer = copy(self.s.buffer_cache)
+        result = self.build('_unpack', mbuffer)
 
     def rebuild(self):
         self.build('_set_values', self.structured_values)
@@ -233,7 +231,7 @@ class StructureSelector(VirtualStructure):
 
     def _set_values(self, key, value_wrapper):
         self.internal_value = self.structure()
-        return self.internal_value._unpack(key, value_wrapper)
+        #return self.internal_value._unpack(key, value_wrapper)
 
     def set_parent(self, parent):
         self.parent = parent
@@ -289,15 +287,24 @@ class BitStructure(StructureClass):
         out = bytes()
         for i in range(bytes_size):
             out += int_to_byte(255 & (val >> (8 * i)))
-        if self.LENDIAN:
+        if not self.LENDIAN:
             out = out[::-1]
         return out
 
     def unpack(self, buffer=None):
-        self._unpack(None, MasterBuffer(buffer))
+        if buffer is not None:
+            mbuffer = MasterBuffer(buffer, 0, 0)
+            self.s.buffer_cache = copy(mbuffer)
+        else:
+            mbuffer = copy(self.s.buffer_cache)
+        self.build('_unpack', mbuffer)
+        mbuffer.bit_offset = 0
+        mbuffer.offset += self.size()
 
     def _unpack(self, key, buffer_wrapper):
         self.build('_unpack', buffer_wrapper)
+        buffer_wrapper.bit_offset = 0
+        buffer_wrapper.offset += self.size()
 
     def set_size(self, byte_size):
         self.s.byte_size = byte_size

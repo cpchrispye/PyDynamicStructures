@@ -43,7 +43,7 @@ class BaseType(VirtualStructure, DescriptorItem):
         try:
             return pack(self.BASEENDIAN + self.BASEFORMAT, self.internal_value)
         except Exception as e:
-            raise BaseTypeError(self, "pack error class %s, value %s, message: %s" % (str(self.internal_value), str(e)))
+            raise BaseTypeError(self, "pack error value %s, message: %s" % (str(self.internal_value), str(e)))
 
     def _unpack(self, key, buffer=None):
         if buffer is not None:
@@ -58,7 +58,7 @@ class BaseType(VirtualStructure, DescriptorItem):
             size = self.size()
             vals = unpack(self.BASEENDIAN + self.BASEFORMAT, self.buffer.buffer[self.buffer.offset:self.buffer.offset + size])
         except Exception as e:
-            raise BaseTypeError(self, "unpack error class %s, value %s, message: %s" % (str(self.internal_value), str(e)))
+            raise BaseTypeError(self, "unpack error value %s, message: %s" % (str(self.internal_value), str(e)))
 
         self.internal_value = vals[0]
         self.buffer.offset += size
