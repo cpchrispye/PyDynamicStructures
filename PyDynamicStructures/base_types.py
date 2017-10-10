@@ -1,6 +1,6 @@
 from PyDynamicStructures.dynamic_structure import VirtualStructure, StructureList
 from PyDynamicStructures.descriptors import DescriptorItem
-from PyDynamicStructures.utils import MasterValues, MasterBuffer
+from PyDynamicStructures.utils import MasterValues, MasterBuffer, bytes_to_bit
 from struct import pack, unpack, calcsize
 from collections import OrderedDict
 
@@ -14,7 +14,7 @@ class BaseTypeError(Exception):
         super(BaseTypeError, self).__init__(message)
 
 class BaseType(VirtualStructure, DescriptorItem):
-    __slots__    = ('internal_value', '__buffer', '__buffer_offset', '__parent')
+    __slots__    = ('internal_value', 'buffer', 'buffer_offset', 'parent')
     BASEFORMAT   = None
     DEFAULTVALUE = 0
     BASEENDIAN   = '<'
@@ -49,19 +49,19 @@ class BaseType(VirtualStructure, DescriptorItem):
         if buffer is not None:
             if not isinstance(buffer, MasterBuffer):
                 buffer = MasterBuffer(buffer, 0)
-            self.__buffer = buffer
-            self.__buffer_offset = self.__buffer.offset
+            self.buffer = buffer
+            self.buffer_offset = self.buffer.offset
         else:
-            self.__buffer.offset = self.__buffer_offset
+            self.buffer.offset = self.buffer_offset
 
         try:
             size = self.size()
-            vals = unpack(self.BASEENDIAN + self.BASEFORMAT, self.__buffer.buffer[self.__buffer.offset:self.__buffer.offset + size])
+            vals = unpack(self.BASEENDIAN + self.BASEFORMAT, self.buffer.buffer[self.buffer.offset:self.buffer.offset + size])
         except Exception as e:
             raise BaseTypeError(self, "unpack error class %s, value %s, message: %s" % (str(self.internal_value), str(e)))
 
         self.internal_value = vals[0]
-        self.__buffer.offset += size
+        self.buffer.offset += size
         return size
 
     def _rebuild(self, key):
@@ -76,7 +76,19 @@ class BaseType(VirtualStructure, DescriptorItem):
                 self.internal_value = value_wrapper[key]
 
     def set_parent(self, parent):
-        self.__parent = parent
+        self.parent = parent
+
+    def get_parent(self):
+        return self.parent
+
+    def root(self):
+        return self.get_parents()[0]
+
+    def get_parents(self):
+        parent = self.get_parent()
+        if parent is None:
+            return [self]
+        return parent.get_parents() + [self]
 
     def size(self):
         return calcsize(self.BASEFORMAT)
@@ -254,3 +266,65 @@ class DOUBLE_L(LittleEndian):
 class STRING_L(LittleEndian):
     __slots__ = ()
     BASEFORMAT = 's'
+
+
+class BitElement(BaseType):
+    def __init__(self, bit_size):
+        self.internal_value = self.DEFAULTVALUE
+        self.bit_size       = bit_size
+
+    @property
+    def structured_values(self):
+        return self.internal_value
+
+    def _pack(self):
+        mask = (0x01 << self.bit_size + 1) - 1
+        return self.internal_value & mask
+
+    def _unpack(self, key, buffer=None):
+        if buffer is not None:
+            if not isinstance(buffer, MasterBuffer):
+                buffer = MasterBuffer(buffer, 0, 0)
+            self.buffer = buffer
+            self.buffer_offset = self.buffer.offset
+            self.buffer_bit_offset = self.buffer.bit_offset
+        else:
+            self.buffer.offset = self.buffer_offset
+            self.buffer.bit_offset = self.buffer_bit_offset
+
+        try:
+            parent = self.get_parent()
+            size = self.size()
+            vals = bytes_to_bit(self.buffer.buffer, size, parent.size(), self.buffer.offset, self.buffer.bit_offset, parent.LENDIAN)
+        except Exception as e:
+            raise BaseTypeError(self, "unpack error, message: %s" % (str(e)))
+
+        self.internal_value = vals
+        self.buffer.bit_offset += size
+        return size
+
+    def size(self):
+        return self.bit_size
+
+    def _rebuild(self, key):
+        pass
+
+    def _set_values(self, key, value_wrapper):
+        if isinstance(value_wrapper, MasterValues):
+            self.internal_value = value_wrapper.values[value_wrapper.offset]
+            value_wrapper.offset += 1
+        elif isinstance(value_wrapper, (dict, OrderedDict)):
+            if key in value_wrapper:
+                self.internal_value = value_wrapper[key]
+
+    # def __mul__(self, other):
+    #     return StructureList([type(self).from_values(self.internal_value) for _ in range(int(other))])
+    #
+    # def __rmul__(self, other):
+    #     return StructureList([type(self).from_values(self.internal_value) for _ in range(int(other))])
+
+    def __repr__(self):
+        return '%s: %b' % (self.__class__.__name__, self.internal_value)
+
+    def __str__(self):
+        return str(self.internal_value)

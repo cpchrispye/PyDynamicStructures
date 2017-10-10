@@ -2,7 +2,7 @@ import math
 from collections import namedtuple
 
 class MasterBuffer(object):
-    def __init__(self, buf=None, off=None, bit_off=None):
+    def __init__(self, buf=None, off=0, bit_off=0):
         self.buffer=buf
         self.offset=off
         self.bit_offset=bit_off
@@ -43,12 +43,15 @@ def get_variable(current_object, path):
     return this_dir
 
 def bit_size_in_bytes(size):
-    return int(math.ceil(size//8))
+    return int(math.ceil(size/8.0))
 
 def byte_to_int(char):
     if isinstance(char, int):
         return char
     return ord(char)
+
+def int_to_byte(val):
+    return chr(val)
 
 def bytes_to_int(buffer, size, offset=0, lendian=True):
     buf_cut = buffer[offset:offset + size]
@@ -60,8 +63,14 @@ def bytes_to_int(buffer, size, offset=0, lendian=True):
         val |= byte_to_int(b)
     return val
 
-def bytes_to_bit(buffer, bit_size,  bytes_offset=0, bit_offset=0, lendian=True):
-    span = bit_size_in_bytes(bit_offset + bit_size)
-    val = bytes_to_int(buffer, span, bytes_offset, lendian)
+def bytes_to_bit(buffer, bit_size, struc_size_bytes=None,  bytes_offset=0, bit_offset=0, lendian=True):
+    if struc_size_bytes is None:
+        struc_size_bytes = bit_size_in_bytes(bit_offset + bit_size)
+    val = bytes_to_int(buffer, struc_size_bytes, bytes_offset, lendian)
+    mask = (1 << bit_size) - 1
+    return (val >> bit_offset) & mask
+
+def bits_to_int(buffer, struc_size_bytes, bit_size, buffer_offset=0, bit_offset=0, lendian=True):
+    val = bytes_to_int(buffer, struc_size_bytes, buffer_offset, lendian)
     mask = (1 << bit_size) - 1
     return (val >> bit_offset) & mask

@@ -147,7 +147,7 @@ class BaseStructure(VirtualStructure):
 
     def size(self):
         out = 0
-        for val in self.m:
+        for val in self.m.values():
             out += val.size()
         return out
 
@@ -277,65 +277,42 @@ class Array(StructureSelector):
         return self.type() * length
 
 
-class BitElement(VirtualStructure):
-    def __init__(self, bit_size):
-        self.internal_value = None
-        self.bit_size = bit_size
-
-    def _pack(self):
-        mask = (0x01 << self.bit_size + 1) - 1
-        return self.internal_value & mask
-
-    def _unpack(self, key, buffer=None):
-        if buffer is not None:
-            if not isinstance(buffer, MasterBuffer):
-                buffer = MasterBuffer(buffer, 0)
-            self.__buffer = buffer
-            self.__buffer_offset = self.__buffer.offset
-        else:
-            self.__buffer.offset = self.__buffer_offset
-
-        try:
-            size = self.size()
-            vals = unpack(self.BASEENDIAN + self.BASEFORMAT, self.__buffer.buffer[self.__buffer.offset:self.__buffer.offset + size])
-        except Exception as e:
-            raise BaseTypeError(self, "unpack error class %s, value %s, message: %s" % (str(self.internal_value), str(e)))
-
-        self.internal_value = vals[0]
-        self.__buffer.offset += size
-        return size
-
-    def size(self):
-        return self.bit_size
-
-
 class BitStructure(StructureClass):
+    LENDIAN = False
 
     def _pack(self):
         val = 0
-        size = self.size()
-        bytes_size = math.ceil(size / 8.0)
-        for item in self.m.values():
+        bytes_size = self.size()
+        for item in self.m.values()[::-1]:
             val <<= item.size()
             val |= item._pack()
-        out = []
+        out = bytes()
         for i in range(bytes_size):
-            out.append(255 & (val >> (8 ** i)))
-        return bytes(out)
+            out += int_to_byte(255 & (val >> (8 * i)))
+        if self.LENDIAN:
+            out = out[::-1]
+        return out
+
+    def unpack(self, buffer=None):
+        self._unpack(None, MasterBuffer(buffer))
 
     def _unpack(self, key, buffer_wrapper):
-        buffer_wrapper.bit_offset = 0
         self.build('_unpack', buffer_wrapper)
-        index = offset
-        bits = 0
-        for item in self.values():
-            bits += item.unpack(buffer, bits)
-        return index - bit_size_in_bytes(bits)
 
     def set_size(self, byte_size):
         self.s.byte_size = byte_size
 
+    def size(self):
+        if hasattr(self.s, 'byte_size'):
+            return self.s.byte_size
+        size = 0
+        for val in self.m.values():
+            size += val.size()
+        return bit_size_in_bytes(size)
 
+
+class BitStructureL(BitStructure):
+    LENDIAN = True
 
 
 if __name__ =='__main__':
