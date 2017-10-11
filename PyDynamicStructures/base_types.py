@@ -1,11 +1,11 @@
-from PyDynamicStructures.dynamic_structure import VirtualStructure, StructureList
-from PyDynamicStructures.descriptors import DescriptorItem
-from PyDynamicStructures.utils import MasterValues, MasterBuffer, int_to_bits, int_to_byte
+from .dynamic_structure import VirtualStructure, StructureList
+from .descriptors import DescriptorItem
+from .utils import MasterValues, MasterBuffer, int_to_bits, int_to_byte
 from struct import pack, unpack, calcsize
 from collections import OrderedDict
 
 __all__ = [ 'BYTE', 'UINT8', 'UINT16', 'UINT32', 'UINT64', 'DOUBLE', 'FLOAT',
-            'BYTE_L', 'UINT8_L', 'UINT16_L', 'UINT32_L', 'UINT64_L', 'DOUBLE_L', 'FLOAT_L',  'EMPTY', 'STRING', 'BaseType', ]#'BitField']
+            'BYTE_L', 'UINT8_L', 'UINT16_L', 'UINT32_L', 'UINT64_L', 'DOUBLE_L', 'FLOAT_L',  'EMPTY', 'STRING', 'BaseType', 'BitElement', 'RAW']
 
 class BaseTypeError(Exception):
     def __init__(self, base_object, message):

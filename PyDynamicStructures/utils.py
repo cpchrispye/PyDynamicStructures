@@ -1,6 +1,5 @@
 import math
 from collections import namedtuple
-
 class MasterBuffer(object):
     def __init__(self, buf=None, off=0):
         self.buffer=buf

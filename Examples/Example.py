@@ -1,6 +1,8 @@
-from PyDynamicStructures.dynamic_structure import StructureClass, StructureList, Array, BitStructure, BitStructureL
+from PyDynamicStructures.dynamic_structure import StructureClass, StructureList, BitStructure, BitStructureL
 from PyDynamicStructures.base_types import UINT8, UINT16, UINT32, UINT64, EMPTY, BitElement
+from PyDynamicStructures.pre_builts import Array
 
+import timeit
 
 class EncapsulationHeader(StructureClass):
     _size_ = 50
@@ -10,7 +12,7 @@ class EncapsulationHeader(StructureClass):
         self.length         = UINT8()
         self.session_handle = UINT32()
         self.status         = UINT32()
-        self.sender_context = UINT64()
+        self.sender_context = sub_header()
         self.options        = Flags()
         self.data           = Array('../length', UINT8)
 
@@ -47,6 +49,11 @@ myFlag.unpack(yy)
 
 enip = EncapsulationHeader(command=10,
                            length=30)
+
+
+
+
+
 print(enip.size())
 enip.command = 10
 enip.rebuild()

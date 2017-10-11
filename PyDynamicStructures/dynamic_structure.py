@@ -1,9 +1,10 @@
-from PyDynamicStructures.descriptors import DescriptorDictClass, DescriptorList
-
+from .descriptors import DescriptorDictClass, DescriptorList
 from abc import ABCMeta, abstractmethod, abstractproperty
-from PyDynamicStructures.utils import *
+from .utils import *
 from collections import OrderedDict, Mapping
 from copy import copy
+
+__all__ = ['DynamicClass', 'StructureClass', 'StructureList', 'StructureSelector', 'BitStructure', 'BitStructureL']
 
 class VirtualStructure(object):
     __metaclass__ = ABCMeta
@@ -214,6 +215,10 @@ class StructureClass(DescriptorDictClass, BaseStructure):
 class StructureList(DescriptorList, BaseStructure):
     __slots__ = ()
 
+    def structure(self):
+        pass
+
+
     def build(self, method, *args, **kwargs):
         self.set_process_attribute(method, *args, **kwargs)
         for key, val in self.m.items():
@@ -297,17 +302,6 @@ class StructureSelector(VirtualStructure):
 
     def _getter_(self, instance):
         return self.internal_value
-
-
-class Array(StructureSelector):
-
-    def __init__(self, length_path, type):
-        self.length_path = length_path
-        self.type = type
-
-    def structure(self):
-        length = self.get_variable(self.length_path)
-        return self.type() * length
 
 
 class BitStructure(StructureClass):
