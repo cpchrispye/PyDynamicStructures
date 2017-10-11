@@ -3,7 +3,9 @@ from PyDynamicStructures.base_types import UINT8, UINT16, UINT32, UINT64, EMPTY,
 
 
 class EncapsulationHeader(StructureClass):
-    def __init__(self):
+    _size_ = 50
+
+    def structure(self):
         self.command        = UINT16()
         self.length         = UINT8()
         self.session_handle = UINT32()
@@ -23,7 +25,7 @@ class sub_header(StructureClass):
 
 class Flags(BitStructure):
 
-    def __init__(self):
+    def structure(self):
         self.a1 = BitElement(2)
         self.a2 = BitElement(2)
         self.a3 = BitElement(2)
@@ -43,8 +45,9 @@ yy = '041f'.decode("hex")
 myFlag = Flags()
 myFlag.unpack(yy)
 
-enip = EncapsulationHeader.from_values(command=10,
-                                       length=30)
+enip = EncapsulationHeader(command=10,
+                           length=30)
+print(enip.size())
 enip.command = 10
 enip.rebuild()
 enip.unpack(header_data)

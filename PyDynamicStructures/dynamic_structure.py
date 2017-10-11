@@ -38,6 +38,15 @@ class BaseStructure(VirtualStructure):
     __metaclass__ = ABCMeta
     __slots__ = ()
 
+    def __init__(self, *args, **kwargs):
+        self.structure()
+        if args:
+            self.set_values(args)
+        elif kwargs:
+            self.set_values(kwargs)
+        if hasattr(self, '_size_'):
+            self.set_size(self._size_)
+
     @abstractproperty
     def m(self):
         pass
@@ -46,27 +55,24 @@ class BaseStructure(VirtualStructure):
     def s(self):
         pass
 
+    @abstractmethod
+    def structure(self):
+        pass
+
     def _set_hook_(self, key, value):
         if not isinstance(value, VirtualStructure):
             raise Exception("Only subclasses of VirtualStructure allowed to be set")
-        value.set_parent(self)
-        if hasattr(self.s, 'set_method') and self.s.set_method is not None:
-            method, args, kwargs = self.s.set_method
-            getattr(value, method)(key, *args, **kwargs)
+        self.process_attribute(key, value)
 
     def build(self, method, *args, **kwargs):
         self.set_process_attribute(method, *args, **kwargs)
-        if hasattr(self, 'structure'):
-            self.m.clear()
-            self.structure()
-        else:
-            for key, val in self.m.items():
-                self.process_attribute(key, val)
+        self.m.clear()
+        self.structure()
         self.set_process_attribute(None)
 
     def process_attribute(self, key, val):
         val.set_parent(self)
-        if self.s.set_method is not None:
+        if hasattr(self.s, 'set_method') and self.s.set_method is not None:
             method, args, kwargs = self.s.set_method
             getattr(val, method)(key, *args, **kwargs)
 
@@ -143,11 +149,16 @@ class BaseStructure(VirtualStructure):
     def get_variable(self, path):
         return get_variable(self, path)
 
+    def set_size(self, byte_size):
+        self.s.byte_size = byte_size
+
     def size(self):
-        out = 0
+        if hasattr(self.s, 'byte_size'):
+            return self.s.byte_size
+        size = 0
         for val in self.m.values():
-            out += val.size()
-        return out
+            size += val.size()
+        return size
 
     def __repr__(self):
         out = []
@@ -169,8 +180,26 @@ class BaseStructure(VirtualStructure):
         return StructureList([type(self).from_values(self.structured_values) for _ in range(int(other))])
 
 
+class DynamicClass(DescriptorDictClass, BaseStructure):
+    __slots__ = ()
+
+    @classmethod
+    def from_values(cls, *args, **kwargs):
+        ins = cls()
+        if args:
+            ins.set_values(args)
+        elif kwargs:
+            ins.set_values(kwargs)
+        return ins
+
 class StructureClass(DescriptorDictClass, BaseStructure):
     __slots__ = ()
+
+    def build(self, method, *args, **kwargs):
+        self.set_process_attribute(method, *args, **kwargs)
+        for key, val in self.m.items():
+            self.process_attribute(key, val)
+        self.set_process_attribute(None)
 
     @classmethod
     def from_values(cls, *args, **kwargs):
@@ -184,6 +213,12 @@ class StructureClass(DescriptorDictClass, BaseStructure):
 
 class StructureList(DescriptorList, BaseStructure):
     __slots__ = ()
+
+    def build(self, method, *args, **kwargs):
+        self.set_process_attribute(method, *args, **kwargs)
+        for key, val in self.m.items():
+            self.process_attribute(key, val)
+        self.set_process_attribute(None)
 
     @classmethod
     def from_values(cls, *args, **kwargs):
@@ -293,17 +328,16 @@ class BitStructure(StructureClass):
 
     def unpack(self, buffer=None):
         if buffer is not None:
-            mbuffer = MasterBuffer(buffer, 0, 0)
+            mbuffer = MasterBuffer(buffer, 0)
             self.s.buffer_cache = copy(mbuffer)
         else:
             mbuffer = copy(self.s.buffer_cache)
-        self.build('_unpack', mbuffer)
-        mbuffer.bit_offset = 0
-        mbuffer.offset += self.size()
+        self._unpack(None, mbuffer)
 
     def _unpack(self, key, buffer_wrapper):
-        self.build('_unpack', buffer_wrapper)
-        buffer_wrapper.bit_offset = 0
+
+        val = bytes_to_int(buffer_wrapper.buffer, self.size(), buffer_wrapper.offset, self.LENDIAN)
+        self.build('_unpack', MasterByte(val, 0))
         buffer_wrapper.offset += self.size()
 
     def set_size(self, byte_size):

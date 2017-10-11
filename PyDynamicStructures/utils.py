@@ -2,10 +2,14 @@ import math
 from collections import namedtuple
 
 class MasterBuffer(object):
-    def __init__(self, buf=None, off=0, bit_off=0):
+    def __init__(self, buf=None, off=0):
         self.buffer=buf
         self.offset=off
-        self.bit_offset=bit_off
+
+class MasterByte(object):
+    def __init__(self, byte_val=None, off=0):
+        self.byte_val=byte_val
+        self.offset=off
 
 class MasterValues(object):
     def __init__(self, val=None, off=None, bit_off=None):
@@ -70,7 +74,7 @@ def bytes_to_bit(buffer, bit_size, struc_size_bytes=None,  bytes_offset=0, bit_o
     mask = (1 << bit_size) - 1
     return (val >> bit_offset) & mask
 
-def bits_to_int(buffer, struc_size_bytes, bit_size, buffer_offset=0, bit_offset=0, lendian=True):
-    val = bytes_to_int(buffer, struc_size_bytes, buffer_offset, lendian)
-    mask = (1 << bit_size) - 1
-    return (val >> bit_offset) & mask
+def int_to_bits(val, size, offset=0):
+    mask = (1 << size) - 1
+    return (val >> offset) & mask
+

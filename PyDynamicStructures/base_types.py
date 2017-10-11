@@ -1,6 +1,6 @@
 from PyDynamicStructures.dynamic_structure import VirtualStructure, StructureList
 from PyDynamicStructures.descriptors import DescriptorItem
-from PyDynamicStructures.utils import MasterValues, MasterBuffer, bytes_to_bit
+from PyDynamicStructures.utils import MasterValues, MasterBuffer, int_to_bits, int_to_byte
 from struct import pack, unpack, calcsize
 from collections import OrderedDict
 
@@ -132,6 +132,38 @@ class EMPTY(BaseType):
     def size(self):
         return 0
 
+class RAW(BaseType):
+    BASEFORMAT = ''
+    DEFAULTVALUE = bytes()
+
+    def __init__(self, value=bytes(), length=None):
+        super(RAW, self).__init__(bytes(value))
+        if length is None:
+            self.set_size(None)
+        else:
+            self.set_size(length)
+
+    def _getter_(self, instance):
+        return self.internal_value
+
+    def _setter_(self, instance, value):
+        self.internal_value = bytes(value)
+
+    def _pack(self):
+        pad_bytes_len = (self.size() - len(self.internal_value))
+        return self.internal_value[:self.size()] + bytes(pad_bytes_len)
+
+    def _unpack(self, key, value, buffer_wrapper):
+        self.internal_value = buffer_wrapper.buffer[buffer_wrapper.offset + self.size()]
+
+    def set_size(self, length):
+        self.byte_size = length
+
+    def size(self):
+        if self.byte_size is None:
+            return len(self.internal_value)
+        else:
+            return self.byte_size
 
 class BigEndian(BaseType):
     __slots__ = ()
@@ -146,7 +178,7 @@ class LittleEndian(BaseType):
 class BYTE(BigEndian):
     __slots__ = ()
     BASEFORMAT = 'c'
-    DEFAULTVALUE = '\0'
+    DEFAULTVALUE = int_to_byte(0)
 
     def __repr__(self):
         return self.__class__.__name__ + ": 0x" +  self.internal_value.encode("hex")
@@ -281,27 +313,13 @@ class BitElement(BaseType):
         mask = (0x01 << self.bit_size + 1) - 1
         return self.internal_value & mask
 
-    def _unpack(self, key, buffer=None):
-        if buffer is not None:
-            if not isinstance(buffer, MasterBuffer):
-                buffer = MasterBuffer(buffer, 0, 0)
-            self.buffer = buffer
-            self.buffer_offset = self.buffer.offset
-            self.buffer_bit_offset = self.buffer.bit_offset
-        else:
-            self.buffer.offset = self.buffer_offset
-            self.buffer.bit_offset = self.buffer_bit_offset
-
+    def _unpack(self, key, buffer):
         try:
-            parent = self.get_parent()
-            size = self.size()
-            vals = bytes_to_bit(self.buffer.buffer, size, parent.size(), self.buffer.offset, self.buffer.bit_offset, parent.LENDIAN)
+            val = int_to_bits(buffer.byte_val, self.size(), buffer.offset)
         except Exception as e:
             raise BaseTypeError(self, "unpack error, message: %s" % (str(e)))
-
-        self.internal_value = vals
-        self.buffer.bit_offset += size
-        return size
+        self.internal_value = val
+        buffer.offset += self.size()
 
     def size(self):
         return self.bit_size
