@@ -1,13 +1,14 @@
 from collections import OrderedDict, MutableMapping, MutableSequence
 from abc import ABCMeta, abstractmethod
-GETTER = '_getter_'
-SETTER = '_setter_'
+GETTER  = '_getter_'
+SETTER  = '_setter_'
+REPLACE = '_replace_'
 
 
 class DescriptorItem(object):
     __metaclass__ = ABCMeta
     __slots__ = ()
-
+    _replace_ = True
     @abstractmethod
     def _getter_(self, instance):
         pass
@@ -137,6 +138,7 @@ class StateDict(object):
 
 class DescriptorClass(object):
     __slots__ = ('_state_')
+    _replace_ = True
 
     @property
     def m(self):
@@ -160,7 +162,7 @@ class DescriptorClass(object):
 
     def __setattr__(self, key, value):
         last_value = self.m.get(key)
-        if (hasattr(last_value, GETTER)):
+        if (hasattr(last_value, GETTER) and not hasattr(value, REPLACE)):
             getattr(last_value, SETTER)(self, value)
         else:
             if hasattr(self, '_set_hook_'):
@@ -170,7 +172,8 @@ class DescriptorClass(object):
 
 class DescriptorDict(MutableMapping, object):
     #__slots__ = ('_state_')
-    
+    _replace_ = True
+
     @property
     def m(self):
         return self._state_.store
@@ -196,7 +199,7 @@ class DescriptorDict(MutableMapping, object):
 
     def __setitem__(self, key, value):
         last_value = self.m.get(key)
-        if (hasattr(last_value, GETTER)):
+        if (hasattr(last_value, GETTER) and not hasattr(value, REPLACE)):
             getattr(last_value, SETTER)(self, value)
         else:
             if hasattr(self, '_set_hook_'):
@@ -226,6 +229,7 @@ class StateList(object):
 
 class DescriptorList(MutableSequence, object):
     __slots__ = ('_state_')
+    _replace_ = True
 
     @property
     def m(self):
@@ -252,7 +256,7 @@ class DescriptorList(MutableSequence, object):
 
     def __setitem__(self, key, value):
         last_value = self.m.get(key)
-        if (hasattr(last_value, GETTER)):
+        if (hasattr(last_value, GETTER) and not hasattr(value, REPLACE)):
             getattr(last_value, SETTER)(self, value)
         else:
             if hasattr(self, '_set_hook_'):

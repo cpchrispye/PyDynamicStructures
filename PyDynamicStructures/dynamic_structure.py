@@ -105,12 +105,12 @@ class BaseStructure(VirtualStructure):
         self.build('_set_values', self.structured_values)
 
     def set_values(self, values):
-        if isinstance(values, list):
+        if isinstance(values, (list, tuple)):
             self.build('_set_values', MasterValues(values, 0))
         elif isinstance(values, (dict, OrderedDict)):
             self.build('_set_values', values)
         else:
-            raise Exception('values must be a lis or a dict not %s' % values.__class__.__name__)
+            raise Exception('values must be a list or a dict not %s' % values.__class__.__name__)
 
     def _pack(self):
         out = bytes()
