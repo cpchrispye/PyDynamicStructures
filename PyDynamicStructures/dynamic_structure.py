@@ -211,6 +211,10 @@ class StructureClass(DescriptorDictClass, BaseStructure):
             ins.set_values(kwargs)
         return ins
 
+    @classmethod
+    def from_list(cls, fields, size=None):
+        cls()
+
 
 class StructureList(DescriptorList, BaseStructure):
     __slots__ = ()

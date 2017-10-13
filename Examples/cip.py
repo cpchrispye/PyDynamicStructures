@@ -26,6 +26,16 @@ class ENIPCommandCode(IntEnum):
     SendRRData        = 0x6f
     SendUnitData      = 0x70
 
+class CPFType(IntEnum):
+
+    Null               = 0x00
+    ConnectedAddress   = 0xa1
+    SequencedAddress   = 0x8002
+    UnconnectedData    = 0xb2
+    ConnectedData      = 0xb1
+    SockaddrInfo_OT    = 0x8000
+    SockaddrInfo_TO    = 0x8001
+
 
 class NetworkStructure(Structure):
     _pack_ = 1
@@ -63,12 +73,14 @@ class SendRRData(CommandSpecificBase):
     def structure(self):
         self.interface_handle = UINT32_L()
         self.timeout          = UINT16_L()
+        self.cpf              = CPF()
 
 class SendUnitData(CommandSpecificBase):
     COMMAND_CODE = ENIPCommandCode.SendUnitData
     def structure(self):
         self.interface_handle = UINT32_L()
         self.timeout          = UINT16_L()
+        self.cpf              = CPF()
 
 class CommandSpecificSelector(StructureSelector):
     CS_STRUCTS = {cs.COMMAND_CODE: cs for cs in CommandSpecificBase.__subclasses__()}
@@ -95,7 +107,59 @@ class ENIPEncapsulationHeader(StructureClass):
         self.status            = UINT32_L()
         self.sender_context    = UINT64_L()
         self.options           = UINT32_L()
+        self.command_specific  = EMPTY()
+
+class ENIPEncapsulationPacket(StructureClass):
+    def structure(self):
+        self.command           = UINT16_L()
+        self.length            = UINT16_L()
+        self.session_handle    = UINT32_L()
+        self.status            = UINT32_L()
+        self.sender_context    = UINT64_L()
+        self.options           = UINT32_L()
         self.command_specific  = CommandSpecificSelector(command='../command', size='../length')
+
+class CPF_Item(DynamicClass):
+    def structure(self):
+        self.type_id = UINT16_L()
+        self.length  = UINT16_L()
+
+        if self.type_id == CPFType.Null:
+            pass
+
+        elif self.type_id == CPFType.ConnectedAddress:
+            if self.length != 4:
+                raise Exception("CPF Connected addr length should be 4 not %d" % self.length)
+            self.connection_identifier = UINT32_L()
+
+        elif self.type_id == CPFType.SequencedAddress:
+            if self.length != 8:
+                raise Exception("CPF SequencedAddress length should be 8 not %d" % self.length)
+            self.connection_identifier = UINT32_L()
+            self.sequence_number = UINT32_L()
+
+        elif self.type_id == CPFType.UnconnectedData:
+            self.data = RAW(length=self.length)
+
+        elif self.type_id == CPFType.ConnectedData:
+            self.data = RAW(length=self.length)
+
+        elif self.type_id in (CPFType.SockaddrInfo_OT, CPFType.SockaddrInfo_TO):
+            if self.length != 16:
+                raise Exception("CPF SockaddrInfo length should be 16 not %d" % self.length)
+            self.sin_family = INT16_L()
+            self.sin_port   = UINT16_L()
+            self.sin_addr   = UINT32_L()
+            self.sin_zero   = UINT8_L() * 8
+
+        else:
+            raise Exception("CPF type not supported %x" % self.type_id)
+
+
+class CPF(StructureClass):
+    def structure(self):
+        self.item_count = UINT16_L()
+        self.item = Array(length_path='../item_count', type=CPF_Item)
 
 class CPF_Unconnected(NetworkStructure):
 
@@ -140,12 +204,12 @@ class ENIP(object):
 
         command_specific = RegisterSession(protocol_version=1, options_flags=0)
 
-        encap_header = ENIPEncapsulationHeader(ENIPCommandCode.RegisterSession,
-                                               sizeof(command_specific),
-                                               0,
-                                               0,
-                                               self.internal_sender_context,
-                                               0,
+        encap_header = ENIPEncapsulationPacket(command=ENIPCommandCode.RegisterSession,
+                                               length=sizeof(command_specific),
+                                               session_handle=0,
+                                               status=0,
+                                               sender_context=self.internal_sender_context,
+                                               options=0,
                                                )
         encap_header.command_specific = command_specific
 
@@ -157,20 +221,25 @@ class ENIP(object):
     def send_enip(self, message):
         self.internal_sender_context += 1
 
-        cpf = CPF_Unconnected(0xB2, sizeof(message))
+        cpf = CPF(item_count=2)
+        cpf.item[0] = CPF_Item(type_id=CPFType.Null, length=0)
+        cpf.item[1] = CPF_Item(type_id=CPFType.UnconnectedData, length=len(message))
+        cpf.item[1].data = message
 
         command_specific = SendRRData(0, 0)
+        command_specific.cpf = cpf
 
-        encap_header = ENIPEncapsulationHeader(ENIPCommandCode.SendRRData,
-                                               sizeof(command_specific) + sizeof(cpf) + cpf.length,
-                                               self.session_handle,
-                                               0,
-                                               self.internal_sender_context,
-                                               0,
+        encap_header = ENIPEncapsulationPacket(command=ENIPCommandCode.SendRRData,
+                                               length=sizeof(command_specific),
+                                               session_handle=self.session_handle,
+                                               status=0,
+                                               sender_context=self.internal_sender_context,
+                                               options=0,
                                                )
 
+        encap_header.command_specific = command_specific
 
-        self.sock.sendall(encap_header.unpack() + command_specific.unpack() + cpf.unpack() + message.unpack())
+        self.sock.sendall(encap_header.unpack())
 
         return self.internal_sender_context
 
@@ -180,21 +249,29 @@ class ENIP(object):
         if sender_context is not None and sender_context in self.packets:
             return self.packets[sender_context]
 
-        header = ENIPEncapsulationHeader()
+        encap_packet = ENIPEncapsulationHeader()
+        payload = self.sock.recv(sizeof(encap_packet))
+        encap_packet.unpack(payload)
+        payload += self.sock.recv(encap_packet.length)
 
-        data_size = self.sock.recv_into(header, sizeof(header))
+        encap_packet = ENIPEncapsulationPacket()
+        encap_packet.unpack(payload)
 
-        payload = self.sock.recv(header.length)
 
-        encap_packet = parse_enip_packet(header, payload)
-
-        if header.sender_context != 0:
-            self.packets[header.sender_context] = encap_packet
+        if encap_packet.sender_context != 0:
+            self.packets[encap_packet.sender_context] = encap_packet
 
         if sender_context is not None:
             return self.packets[sender_context]
         else:
             return encap_packet
+
+
+class MessageRouter(StructureClass):
+    def structure(self):
+        self.service = UINT8()
+        self.path_size = UINT8()
+
 
 
 class CIP(object):
@@ -213,7 +290,10 @@ if __name__ == '__main__':
     # bp.set_device('00-A0-EC-44-9B-2E', "192.168.0.15", '255.255.255.0')
     # bp.start()
 
-    con = CIP("192.168.0.25")
+    #con = CIP("192.168.0.25")
+    enip = ENIP("192.168.0.25")
+    path = '20 01 24 01 30 03'.replace(' ', '').encode('hex')
+    enip.send_enip(path)
     i = 1
 
     # bp.stop()

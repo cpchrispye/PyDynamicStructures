@@ -5,7 +5,8 @@ from struct import pack, unpack, calcsize
 from collections import OrderedDict
 
 __all__ = [ 'BYTE', 'UINT8', 'UINT16', 'UINT32', 'UINT64', 'DOUBLE', 'FLOAT',
-            'BYTE_L', 'UINT8_L', 'UINT16_L', 'UINT32_L', 'UINT64_L', 'DOUBLE_L', 'FLOAT_L',  'EMPTY', 'STRING', 'BaseType', 'BitElement', 'RAW']
+            'BYTE_L', 'UINT8_L', 'UINT16_L', 'UINT32_L', 'UINT64_L', 'DOUBLE_L', 'FLOAT_L',  'EMPTY', 'STRING', 'BaseType', 'BitElement', 'RAW',
+            'INT8', 'INT16', 'INT32', 'INT64', 'INT8_L', 'INT16_L', 'INT32_L', 'INT64_L']
 
 class BaseTypeError(Exception):
     def __init__(self, base_object, message):
@@ -122,10 +123,10 @@ class EMPTY(BaseType):
     def _pack(self):
         pass
 
-    def _unpack(self, key, value, buffer_wrapper):
+    def _unpack(self, key, buffer_wrapper):
         pass
 
-    def _set_values(self, key, value, value_wrapper):
+    def _set_values(self, key, value_wrapper):
         pass
 
 
