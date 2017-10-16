@@ -2,17 +2,7 @@ import socket
 from PyDynamicStructures import *
 from ctypes import Structure, c_uint16, c_uint32, c_uint64, addressof, memmove, create_string_buffer
 from enum import IntEnum
-
-class EncapPacketStructure(object):
-
-    def __init__(self):
-        self.header
-        self.command_specific
-        self.cpf
-        self.data
-
-
-
+from Examples.cip_types import EPATH, EPATH_Selector, EItem, SegmentType, LogicalFormat, LogicalType
 
 
 class ENIPCommandCode(IntEnum):
@@ -35,18 +25,6 @@ class CPFType(IntEnum):
     ConnectedData      = 0xb1
     SockaddrInfo_OT    = 0x8000
     SockaddrInfo_TO    = 0x8001
-
-
-class NetworkStructure(Structure):
-    _pack_ = 1
-
-    def unpack(self):
-        buffer = create_string_buffer(sizeof(self))
-        memmove(buffer, addressof(self), sizeof(self))
-        return buffer.raw
-
-    def pack(self, data):
-        memmove(addressof(self), data, sizeof(self))
 
 
 class CommandSpecificBase(StructureClass):
@@ -161,25 +139,6 @@ class CPF(StructureClass):
         self.item_count = UINT16_L()
         self.item = Array(length_path='../item_count', type=CPF_Item)
 
-class CPF_Unconnected(NetworkStructure):
-
-    _fields_ = [
-        ("type_id", c_uint16),
-        ("length",  c_uint16),
-    ]
-
-
-def parse_enip_packet(header, packet):
-
-    if header.command == ENIPCommandCode.RegisterSession:
-        command_specific = RegisterSession()
-
-    elif header.command == ENIPCommandCode.SendRRData:
-        command_specific = SendRRData()
-
-    command_specific.unpack(packet)
-    return command_specific
-
 
 class ENIP(object):
 
@@ -194,7 +153,7 @@ class ENIP(object):
         self.packets                 = dict()
 
         sender_context = self.register_session()
-        packet         = self.read(sender_context)
+        packet         = self.read(sender_context, True)
 
         self.session_handle  = packet.session_handle
 
@@ -244,7 +203,7 @@ class ENIP(object):
         return self.internal_sender_context
 
 
-    def read(self, sender_context=None):
+    def read(self, sender_context=None, full_packet=False):
 
         if sender_context is not None and sender_context in self.packets:
             return self.packets[sender_context]
@@ -261,17 +220,26 @@ class ENIP(object):
         if encap_packet.sender_context != 0:
             self.packets[encap_packet.sender_context] = encap_packet
 
-        if sender_context is not None:
-            return self.packets[sender_context]
-        else:
+        if full_packet:
             return encap_packet
+        return encap_packet.command_specific.cpf.item[1].data
 
 
 class MessageRouter(StructureClass):
     def structure(self):
         self.service = UINT8()
         self.path_size = UINT8()
+        self.epath = EPATH_Selector('../path_size')
+        self.data  = RAW_END()
 
+class MessageRouterResponce(StructureClass):
+    def structure(self):
+        self.service = UINT8()
+        self.reserved = UINT8()
+        self.general_status = UINT8()
+        self.additional_size = UINT8()
+        self.additional_status = Array(length_path='../additional_size', type=UINT16)
+        self.data = RAW_END()
 
 
 class CIP(object):
@@ -280,9 +248,47 @@ class CIP(object):
         self.enip = ENIP(ip_address, port)
 
 
-    def send_cip(self, service, class_id, instance_id, data, route=None):
-        pass
+    def send_encap(self, service, class_id=None, instance_id=None, attribute_id=None, data=None, route=None):
 
+        message = MessageRouter()
+        message.service = service
+        if class_id is not None:
+            message.epath.append(EItem(SegmentType.LogicalSegment, LogicalType.ClassID, LogicalFormat.bit_8, class_id))
+        if instance_id is not None:
+            message.epath.append(EItem(SegmentType.LogicalSegment, LogicalType.InstanceID, LogicalFormat.bit_8, instance_id))
+        if attribute_id is not None:
+            message.epath.append(EItem(SegmentType.LogicalSegment, LogicalType.AttributeID, LogicalFormat.bit_8, attribute_id))
+        if data is not None:
+            message.data = data
+
+        message.path_size = message.epath.struct_size() // 2
+
+        receipt = self.enip.send_enip(message.pack())
+        rsp = self.enip.read(receipt)
+        rsp_struct = MessageRouterResponce()
+        rsp_struct.unpack(rsp)
+
+        if rsp_struct.general_status != 0:
+            raise Exception('CIP ERROR general status %d' % rsp_struct.general_status)
+        return rsp_struct.data
+
+class EmbeddedMessageSelector(StructureSelector):
+    def structure(self):
+        size = self.get_variable(self.kwargs['request_size'])
+        message = MessageRouter()
+        message.set_size(size)
+        return message
+
+class ConnectionManager(StructureClass):
+    def structure(self):
+        self.priority = UINT8()
+        self.ticks = UINT8()
+        self.request_size = UINT16_L()
+        self.message_request = EmbeddedMessageSelector(request_size='../request_size')
+        self.pad = PADD()
+        self.route_size = UINT8()
+        self.reserved = UINT8()
+        self.route_path = EPATH_Selector('../request_size')
 
 if __name__ == '__main__':
     # from psttools.utils.bootp import BootpServer
@@ -290,10 +296,25 @@ if __name__ == '__main__':
     # bp.set_device('00-A0-EC-44-9B-2E', "192.168.0.15", '255.255.255.0')
     # bp.start()
 
-    #con = CIP("192.168.0.25")
-    enip = ENIP("192.168.0.115")
-    path = '20 01 24 01 30 03'.replace(' ', '').decode('hex')
-    enip.send_enip(path)
-    i = 1
+    con = CIP("192.168.0.25")
+    print(con.send_encap(0x0e, 1, 1, 7))
+    cm = ConnectionManager(priority=100,
+                            ticks=100)
+
+    cm.message_request.service = 0x0e
+    cm.message_request.epath.append(EItem(SegmentType.LogicalSegment, LogicalType.ClassID, LogicalFormat.bit_8, 1))
+    cm.message_request.epath.append(EItem(SegmentType.LogicalSegment, LogicalType.InstanceID, LogicalFormat.bit_8, 1))
+    cm.message_request.epath.append(EItem(SegmentType.LogicalSegment, LogicalType.AttributeID, LogicalFormat.bit_8, 7))
+    cm.message_request.path_size = cm.message_request.epath.struct_size() // 2
+    cm.request_size = cm.message_request.struct_size()
+
+    cm.route_path.append(EItem(SegmentType.PortSegment, 0, 1, 0))
+    cm.route_size = cm.route_path.struct_size() // 2
+
+    rsp = con.send_encap(0x52, 6, 1, data=cm.pack())
+
+
+
+
 
     # bp.stop()

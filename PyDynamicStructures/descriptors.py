@@ -129,6 +129,9 @@ class ListStore(MutableSequence):
     def items(self):
         return zip(self.keys(), self.values())
 
+    def clear(self):
+        del self[:]
+
 class StateDict(object):
 
     def __init__(self):

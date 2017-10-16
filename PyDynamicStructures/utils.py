@@ -59,7 +59,7 @@ def byte_to_int(char):
     return ord(char)
 
 def int_to_byte(val):
-    return chr(val)
+    return chr(val).encode()
 
 def bytes_to_int(buffer, size, offset=0, lendian=True):
     buf_cut = buffer[offset:offset + size]

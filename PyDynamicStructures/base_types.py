@@ -5,7 +5,7 @@ from struct import pack, unpack, calcsize
 from collections import OrderedDict
 
 __all__ = [ 'BYTE', 'UINT8', 'UINT16', 'UINT32', 'UINT64', 'DOUBLE', 'FLOAT',
-            'BYTE_L', 'UINT8_L', 'UINT16_L', 'UINT32_L', 'UINT64_L', 'DOUBLE_L', 'FLOAT_L',  'EMPTY', 'STRING', 'BaseType', 'BitElement', 'RAW',
+            'BYTE_L', 'UINT8_L', 'UINT16_L', 'UINT32_L', 'UINT64_L', 'DOUBLE_L', 'FLOAT_L',  'EMPTY', 'STRING', 'BaseType', 'BitElement', 'RAW', 'RAW_END', 'PADD',
             'INT8', 'INT16', 'INT32', 'INT64', 'INT8_L', 'INT16_L', 'INT32_L', 'INT64_L']
 
 class BaseTypeError(Exception):
@@ -130,9 +130,18 @@ class EMPTY(BaseType):
     def slave_set_values(self, key, value_wrapper):
         pass
 
-
     def size(self):
         return 0
+
+class PADD(EMPTY):
+
+
+    def slave_unpack(self, key, buffer_wrapper):
+        buffer_wrapper.offest += 1
+
+    def slave_pack(self):
+        return int_to_byte(0)
+
 
 class RAW(BaseType):
     BASEFORMAT = ''
@@ -140,10 +149,7 @@ class RAW(BaseType):
 
     def __init__(self, value=bytes(), length=None):
         super(RAW, self).__init__(bytes(value))
-        if length is None:
-            self.set_size(None)
-        else:
-            self.set_size(length)
+        self.set_size(length)
 
     def _getter_(self, instance):
         return self.internal_value
@@ -153,10 +159,11 @@ class RAW(BaseType):
 
     def slave_pack(self):
         pad_bytes_len = (self.size() - len(self.internal_value))
-        return self.internal_value[:self.size()] + bytes(pad_bytes_len)
+        return self.internal_value[:self.size()] + bytes() * pad_bytes_len
 
-    def slave_unpack(self, key, value, buffer_wrapper):
-        self.internal_value = buffer_wrapper.buffer[buffer_wrapper.offset + self.size()]
+    def slave_unpack(self, key, buffer_wrapper):
+        self.internal_value = buffer_wrapper.buffer[buffer_wrapper.offset:buffer_wrapper.offset + self.size()]
+        buffer_wrapper.offset += self.size()
 
     def set_size(self, length):
         self.byte_size = length
@@ -166,6 +173,30 @@ class RAW(BaseType):
             return len(self.internal_value)
         else:
             return self.byte_size
+
+class RAW_END(RAW):
+
+    def slave_unpack(self, key, buffer_wrapper):
+        parent = self.get_parent()
+        while parent is not None:
+            size = parent.fixed_size()
+            if size is not None:
+                break
+            parent = parent.get_parent()
+
+        if size is None:
+            self.internal_value = buffer_wrapper.buffer[buffer_wrapper.offset:]
+        else:
+            self.internal_value = buffer_wrapper.buffer[buffer_wrapper.offset: buffer_wrapper.offset + size]
+
+        buffer_wrapper.offset += self.size()
+
+    def slave_pack(self):
+        return self.internal_value
+
+    def size(self):
+        return len(self.internal_value)
+
 
 class BigEndian(BaseType):
     __slots__ = ()

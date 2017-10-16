@@ -4,7 +4,7 @@ from .utils import *
 from collections import OrderedDict, Mapping
 from copy import copy
 
-__all__ = ['DynamicClass', 'StructureClass', 'StructureList', 'StructureSelector', 'BitStructure', 'BitStructureL']
+__all__ = ['DynamicClass', 'StructureClass', 'StructureList', 'DynamicList', 'StructureSelector', 'BitStructure', 'BitStructureL']
 
 class VirtualStructure(object):
     __metaclass__ = ABCMeta
@@ -145,7 +145,7 @@ class BaseStructure(VirtualStructure):
         parent = self.get_parent()
         if parent is None:
             return [self]
-        return parent.path() + [self]
+        return parent.get_parents() + [self]
 
     def get_variable(self, path):
         return get_variable(self, path)
@@ -154,12 +154,21 @@ class BaseStructure(VirtualStructure):
         self.s.byte_size = byte_size
 
     def size(self):
-        if hasattr(self.s, 'byte_size'):
-            return self.s.byte_size
+        s = self.fixed_size()
+        if s is None:
+            return self.struct_size()
+        return s
+
+    def struct_size(self):
         size = 0
         for val in self.m.values():
             size += val.size()
         return size
+
+    def fixed_size(self):
+        if hasattr(self.s, 'byte_size'):
+            return self.s.byte_size
+        return None
 
     def __repr__(self):
         out = []
@@ -219,7 +228,6 @@ class StructureList(DescriptorList, BaseStructure):
     def structure(self):
         pass
 
-
     def build(self, method, *args, **kwargs):
         self.set_process_attribute(method, *args, **kwargs)
         for key, val in self.m.items():
@@ -235,10 +243,15 @@ class StructureList(DescriptorList, BaseStructure):
             ins.set_values(kwargs)
         return ins
 
-    def __init__(self, seq=None):
+    def __init__(self, seq=None, data_type=None, max_size=None):
         if seq is not None:
             for i in seq:
                 self.append(i)
+            return
+
+        if data_type is not None and max_size is not None:
+            self.s.data_type = data_type
+            self.s.max_size = max_size
 
     @property
     def structured_values(self):
@@ -246,6 +259,26 @@ class StructureList(DescriptorList, BaseStructure):
         for val in self.m:
             out.append(val.structured_values)
         return out
+
+class DynamicList(DescriptorList, BaseStructure):
+    __slots__ = ()
+
+    @classmethod
+    def from_values(cls, *args, **kwargs):
+        ins = cls()
+        if args:
+            ins.set_values(args)
+        elif kwargs:
+            ins.set_values(kwargs)
+        return ins
+
+    @property
+    def structured_values(self):
+        out = list()
+        for val in self.m:
+            out.append(val.structured_values)
+        return out
+
 
 class StructureSelector(VirtualStructure):
     __metaclass__ = ABCMeta
@@ -268,7 +301,7 @@ class StructureSelector(VirtualStructure):
 
     def slave_unpack(self, key, buffer_wrapper):
         self.internal_value = self.structure()
-        return self.internal_value._unpack(key, buffer_wrapper)
+        return self.internal_value.slave_unpack(key, buffer_wrapper)
 
     def slave_set_values(self, key, value_wrapper):
         self.internal_value = self.structure()
@@ -301,6 +334,14 @@ class StructureSelector(VirtualStructure):
             return 0
         return self.internal_value.size()
 
+    def struct_size(self):
+        if self.internal_value is None:
+            return 0
+        return self.internal_value.struct_size()
+
+    def fixed_size(self):
+        return None
+
     def _getter_(self, instance):
         return self.internal_value
 
@@ -312,7 +353,10 @@ class BitStructure(DynamicClass):
     def slave_pack(self):
         val = 0
         bytes_size = self.size()
-        for item in self.m.values()[::-1]:
+        items = self.m.values()
+        if self._low_first_:
+            items.reversed()
+        for item in items:
             val <<= item.size()
             val |= item.slave_pack()
         out = bytes()
@@ -340,13 +384,21 @@ class BitStructure(DynamicClass):
         self.s.byte_size = byte_size
 
     def size(self):
-        if hasattr(self.s, 'byte_size'):
-            return self.s.byte_size
+        s = self.fixed_size()
+        if s is None:
+            return self.struct_size()
+        return s
+
+    def struct_size(self):
         size = 0
         for val in self.m.values():
             size += val.size()
         return bit_size_in_bytes(size)
 
+    def fixed_size(self):
+        if hasattr(self.s, 'byte_size'):
+            return self.s.byte_size
+        return None
 
 class BitStructureL(BitStructure):
     LENDIAN = True

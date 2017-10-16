@@ -2,7 +2,7 @@ import socket
 from PyDynamicStructures import *
 from enum import IntEnum
 
-__all__ = ["octet_cip", "byte_cip", "bool_cip", "sint_cip", "int_cip", "dint_cip", "lint_cip", "usint_cip", "uint_cip", "udint_cip", "ulint_cip", "word_cip", "dword_cip", "lword_cip"]
+__all__ = ["octet_cip", "byte_cip", "bool_cip", "sint_cip", "int_cip", "dint_cip", "lint_cip", "usint_cip", "uint_cip", "udint_cip", "ulint_cip", "word_cip", "dword_cip", "lword_cip", "EPATH", "EPATH_Selector"]
 
 octet_cip   =BYTE
 byte_cip    =BYTE
@@ -65,10 +65,7 @@ class EHead(BitStructure):
 
         elif self.logical == SegmentType.LogicalSegment:
             self.type = BitElement(3)
-            self.format(2)
-
-        elif self.logical == SegmentType.NetworkSegment:
-            self.sub_type = BitElement(5)
+            self.format = BitElement(2)
 
         elif self.logical == SegmentType.NetworkSegment:
             self.sub_type = BitElement(5)
@@ -88,11 +85,13 @@ class EItem(DynamicClass):
         self.type = EHead()
 
         if self.type.logical == SegmentType.PortSegment:
-            if self.head.extended:
+            if self.type.identifier == 15:
+                self.extended_port = UINT16()
+            if self.type.extended:
                 self.address_size = UINT8()
-                self.link_address = BYTE() * self.address_size
+                self.link_address = UINT8() * self.address_size
             else:
-                self.link_address = BYTE()
+                self.link_address = UINT8()
 
         elif self.type.logical == SegmentType.LogicalSegment:
             if self.type.type == LogicalType.ExtendedLogical:
@@ -100,23 +99,31 @@ class EItem(DynamicClass):
             if self.type.format == LogicalFormat.bit_8:
                 self.value = UINT8_L()
             elif self.type.format == LogicalFormat.bit_16:
-                self.value = UINT16_L
+                self.value = UINT16_L()
             elif self.type.format == LogicalFormat.bit_132:
-                self.value = UINT32_L
+                self.value = UINT32_L()
 
 
+class EPATH_List(DynamicList):
+    def structure(self):
+        my_size = 0
+        while self.size() > my_size:
+            self.append(EItem())
+            my_size += self[-1].size()
+
+        if self.size() != my_size:
+            raise Exception("EPATH Size mismatch should be %d not %d" % (self.size(), my_size))
 
 
+class EPATH_Selector(StructureSelector):
+    def structure(self):
+        size = self.get_variable(self.args[0])
+        epath = EPATH_List()
+        epath.set_size(size*2)
+        return epath
 
 
 class EPATH(DynamicClass):
     def structure(self):
-        self.path_size
-        self.set_size(self.path_size)
-        self.path = StructureList()
-
-        bytes_left = self.size()
-        while bytes_left > 0:
-            self.path.append(EItem())
-            bytes_left = self.path_size - self.path.size()
-
+        self.epath_size = uint_cip()
+        self.epath = EPATH_Selector('../epath_size')
