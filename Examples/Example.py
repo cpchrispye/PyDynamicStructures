@@ -26,7 +26,7 @@ class sub_header(StructureClass):
             self.j = UINT16() * 3
 
 class Flags(BitStructure):
-
+    _low_first_ = False
     def structure(self):
         self.a1 = BitElement(2)
         self.a2 = BitElement(2)
@@ -36,16 +36,16 @@ class Flags(BitStructure):
         self.a6 = BitElement(2)
         self.a7 = BitElement(2)
         self.a8 = BitElement(2)
-        self.a9 = BitElement(4)
-        self.set_size(5)
+        #self.a9 = BitElement(4)
+        #self.set_size(5)
 
 data = ''.join(['%02x' % i for i in range(255)])
 header_data = data.decode("hex")
 
-yy = '041f'.decode("hex")
-
-myFlag = Flags()
-myFlag.unpack(yy)
+# yy = '041f'.decode("hex")
+#
+# myFlag = Flags()
+# myFlag.unpack(yy)
 
 enip = EncapsulationHeader(command=10,
                            length=30)

@@ -269,8 +269,10 @@ class DescriptorList(MutableSequence, object):
     def __len__(self):
         return self._state_.store.__len__()
 
-    def insert(self, index, value):
-        self._state_.store.insert(index, value)
+    def insert(self, key, value):
+        if hasattr(self, '_set_hook_'):
+            self._set_hook_(key, value)
+        self.m.insert(key, value)
 
     def items(self):
         return zip(range(len(self)), self)

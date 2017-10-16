@@ -7,10 +7,13 @@ class MasterBuffer(object):
         self.buffer=buf
         self.offset=off
 
+
 class MasterByte(object):
-    def __init__(self, byte_val=None, off=0):
+    def __init__(self, byte_val=None, off=0, bit_size=None, low_first=True):
         self.byte_val=byte_val
         self.offset=off
+        self.low_first = low_first
+        self.bit_size = bit_size
 
 class MasterValues(object):
     def __init__(self, val=None, off=None, bit_off=None):

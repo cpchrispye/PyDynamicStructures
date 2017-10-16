@@ -15,15 +15,15 @@ class VirtualStructure(object):
         pass
 
     @abstractmethod
-    def _pack(self):
+    def slave_pack(self):
         pass
 
     @abstractmethod
-    def _unpack(self, key, value, buffer_wrapper):
+    def slave_unpack(self, key, value, buffer_wrapper):
         pass
 
     @abstractmethod
-    def _set_values(self, key, value, value_wrapper):
+    def slave_set_values(self, key, value, value_wrapper):
         pass
 
     @abstractmethod
@@ -91,7 +91,7 @@ class BaseStructure(VirtualStructure):
         return out
 
     def pack(self):
-        return self._pack()
+        return self.slave_pack()
 
     def unpack(self, buffer=None):
         if buffer is not None:
@@ -99,33 +99,33 @@ class BaseStructure(VirtualStructure):
             self.s.buffer_cache = copy(mbuffer)
         else:
             mbuffer = copy(self.s.buffer_cache)
-        result = self.build('_unpack', mbuffer)
+        result = self.build('slave_unpack', mbuffer)
 
     def rebuild(self):
-        self.build('_set_values', self.structured_values)
+        self.build('slave_set_values', self.structured_values)
 
     def set_values(self, values):
         if isinstance(values, (list, tuple)):
-            self.build('_set_values', MasterValues(values, 0))
+            self.build('slave_set_values', MasterValues(values, 0))
         elif isinstance(values, (dict, OrderedDict)):
-            self.build('_set_values', values)
+            self.build('slave_set_values', values)
         else:
             raise Exception('values must be a list or a dict not %s' % values.__class__.__name__)
 
-    def _pack(self):
+    def slave_pack(self):
         out = bytes()
         for item in self.m.values():
-            out += item._pack()
+            out += item.slave_pack()
         return out
 
-    def _unpack(self, key, buffer_wrapper):
-        self.build('_unpack', buffer_wrapper)
+    def slave_unpack(self, key, buffer_wrapper):
+        self.build('slave_unpack', buffer_wrapper)
 
-    def _set_values(self, key, value_wrapper):
+    def slave_set_values(self, key, value_wrapper):
         if isinstance(value_wrapper, MasterValues):
-            self.build('_set_values', value_wrapper)
+            self.build('slave_set_values', value_wrapper)
         elif isinstance(value_wrapper, (dict, OrderedDict)):
-            self.build('_set_values', value_wrapper.get(key, {}))
+            self.build('slave_set_values', value_wrapper.get(key, {}))
         else:
             raise Exception('values must be a list or a dict not %s' % value_wrapper.values.__class__.__name__)
 
@@ -169,7 +169,7 @@ class BaseStructure(VirtualStructure):
 
     @property
     def hex(self):
-        return self._pack().encode('hex')
+        return self.slave_pack().encode('hex')
 
     # def __str__(self):
     #     return self.str_struct()
@@ -185,12 +185,9 @@ class DynamicClass(DescriptorDictClass, BaseStructure):
     __slots__ = ()
 
     @classmethod
-    def from_values(cls, *args, **kwargs):
+    def from_values(cls, values):
         ins = cls()
-        if args:
-            ins.set_values(args)
-        elif kwargs:
-            ins.set_values(kwargs)
+        ins.set_values(values)
         return ins
 
 class StructureClass(DescriptorDictClass, BaseStructure):
@@ -266,14 +263,14 @@ class StructureSelector(VirtualStructure):
     def structured_values(self):
         return self.internal_value.structured_values
 
-    def _pack(self):
-        return self.internal_value._pack()
+    def slave_pack(self):
+        return self.internal_value.slave_pack()
 
-    def _unpack(self, key, buffer_wrapper):
+    def slave_unpack(self, key, buffer_wrapper):
         self.internal_value = self.structure()
         return self.internal_value._unpack(key, buffer_wrapper)
 
-    def _set_values(self, key, value_wrapper):
+    def slave_set_values(self, key, value_wrapper):
         self.internal_value = self.structure()
         #return self.internal_value._unpack(key, value_wrapper)
 
@@ -308,15 +305,16 @@ class StructureSelector(VirtualStructure):
         return self.internal_value
 
 
-class BitStructure(StructureClass):
+class BitStructure(DynamicClass):
     LENDIAN = False
+    _low_first_ = True
 
-    def _pack(self):
+    def slave_pack(self):
         val = 0
         bytes_size = self.size()
         for item in self.m.values()[::-1]:
             val <<= item.size()
-            val |= item._pack()
+            val |= item.slave_pack()
         out = bytes()
         for i in range(bytes_size):
             out += int_to_byte(255 & (val >> (8 * i)))
@@ -330,13 +328,13 @@ class BitStructure(StructureClass):
             self.s.buffer_cache = copy(mbuffer)
         else:
             mbuffer = copy(self.s.buffer_cache)
-        self._unpack(None, mbuffer)
+        self.slave_unpack(None, mbuffer)
 
-    def _unpack(self, key, buffer_wrapper):
-
-        val = bytes_to_int(buffer_wrapper.buffer, self.size(), buffer_wrapper.offset, self.LENDIAN)
-        self.build('_unpack', MasterByte(val, 0))
-        buffer_wrapper.offset += self.size()
+    def slave_unpack(self, key, buffer_wrapper):
+        size = self.size()
+        val = bytes_to_int(buffer_wrapper.buffer, size, buffer_wrapper.offset, self.LENDIAN)
+        self.build('slave_unpack', MasterByte(val, 0, size*8, self._low_first_))
+        buffer_wrapper.offset += size
 
     def set_size(self, byte_size):
         self.s.byte_size = byte_size

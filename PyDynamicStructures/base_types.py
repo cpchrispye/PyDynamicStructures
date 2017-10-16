@@ -40,13 +40,13 @@ class BaseType(VirtualStructure, DescriptorItem):
     def structured_values(self):
         return self.internal_value
 
-    def _pack(self):
+    def slave_pack(self):
         try:
             return pack(self.BASEENDIAN + self.BASEFORMAT, self.internal_value)
         except Exception as e:
             raise BaseTypeError(self, "pack error value %s, message: %s" % (str(self.internal_value), str(e)))
 
-    def _unpack(self, key, buffer=None):
+    def slave_unpack(self, key, buffer=None):
         if buffer is not None:
             if not isinstance(buffer, MasterBuffer):
                 buffer = MasterBuffer(buffer, 0)
@@ -68,10 +68,11 @@ class BaseType(VirtualStructure, DescriptorItem):
     def _rebuild(self, key):
         pass
 
-    def _set_values(self, key, value_wrapper):
+    def slave_set_values(self, key, value_wrapper):
         if isinstance(value_wrapper, MasterValues):
-            self.internal_value = value_wrapper.values[value_wrapper.offset]
-            value_wrapper.offset += 1
+            if value_wrapper.offset < len(value_wrapper.values):
+                self.internal_value = value_wrapper.values[value_wrapper.offset]
+                value_wrapper.offset += 1
         elif isinstance(value_wrapper, (dict, OrderedDict)):
             if key in value_wrapper:
                 self.internal_value = value_wrapper[key]
@@ -96,7 +97,7 @@ class BaseType(VirtualStructure, DescriptorItem):
 
     @property
     def hex(self):
-        return self._pack().encode('hex')
+        return self.slave_pack().encode('hex')
 
     def __mul__(self, other):
         return StructureList([type(self).from_values(self.internal_value) for _ in range(int(other))])
@@ -120,13 +121,13 @@ class EMPTY(BaseType):
     def _setter_(self, instance, value):
         pass
 
-    def _pack(self):
+    def slave_pack(self):
         pass
 
-    def _unpack(self, key, buffer_wrapper):
+    def slave_unpack(self, key, buffer_wrapper):
         pass
 
-    def _set_values(self, key, value_wrapper):
+    def slave_set_values(self, key, value_wrapper):
         pass
 
 
@@ -150,11 +151,11 @@ class RAW(BaseType):
     def _setter_(self, instance, value):
         self.internal_value = bytes(value)
 
-    def _pack(self):
+    def slave_pack(self):
         pad_bytes_len = (self.size() - len(self.internal_value))
         return self.internal_value[:self.size()] + bytes(pad_bytes_len)
 
-    def _unpack(self, key, value, buffer_wrapper):
+    def slave_unpack(self, key, value, buffer_wrapper):
         self.internal_value = buffer_wrapper.buffer[buffer_wrapper.offset + self.size()]
 
     def set_size(self, length):
@@ -310,13 +311,17 @@ class BitElement(BaseType):
     def structured_values(self):
         return self.internal_value
 
-    def _pack(self):
+    def slave_pack(self):
         mask = (0x01 << self.bit_size + 1) - 1
         return self.internal_value & mask
 
-    def _unpack(self, key, buffer):
+    def slave_unpack(self, key, buffer):
         try:
-            val = int_to_bits(buffer.byte_val, self.size(), buffer.offset)
+            if buffer.low_first:
+                val = int_to_bits(buffer.byte_val, self.size(), buffer.offset)
+            else:
+                offset = buffer.bit_size - buffer.offset - self.size()
+                val = int_to_bits(buffer.byte_val, self.size(), offset)
         except Exception as e:
             raise BaseTypeError(self, "unpack error, message: %s" % (str(e)))
         self.internal_value = val
@@ -328,7 +333,7 @@ class BitElement(BaseType):
     def _rebuild(self, key):
         pass
 
-    def _set_values(self, key, value_wrapper):
+    def slave_set_values(self, key, value_wrapper):
         if isinstance(value_wrapper, MasterValues):
             self.internal_value = value_wrapper.values[value_wrapper.offset]
             value_wrapper.offset += 1

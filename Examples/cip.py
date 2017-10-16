@@ -239,7 +239,7 @@ class ENIP(object):
 
         encap_header.command_specific = command_specific
 
-        self.sock.sendall(encap_header.unpack())
+        self.sock.sendall(encap_header.pack())
 
         return self.internal_sender_context
 
@@ -291,8 +291,8 @@ if __name__ == '__main__':
     # bp.start()
 
     #con = CIP("192.168.0.25")
-    enip = ENIP("192.168.0.25")
-    path = '20 01 24 01 30 03'.replace(' ', '').encode('hex')
+    enip = ENIP("192.168.0.115")
+    path = '20 01 24 01 30 03'.replace(' ', '').decode('hex')
     enip.send_enip(path)
     i = 1
 
