@@ -39,14 +39,31 @@ class BaseStructure(VirtualStructure):
     __metaclass__ = ABCMeta
     __slots__ = ()
 
-    def __init__(self, *args, **kwargs):
-        self.structure()
-        if args:
-            self.set_values(args)
-        elif kwargs:
-            self.set_values(kwargs)
+    def __init__(self, st_size=None, *args,  **kwargs):
+        self.s.args = args
+        self.s.kwargs = kwargs
         if hasattr(self, '_size_'):
             self.set_size(self._size_)
+        elif st_size is not None:
+            self.set_size(st_size)
+        else:
+            self.structure(*self.s.args, **self.s.kwargs)
+
+    @classmethod
+    def from_values(cls, *args, **kwargs):
+        ins = cls()
+        if args:
+            ins.set_values(args)
+        elif kwargs:
+            ins.set_values(kwargs)
+        return ins
+
+    @classmethod
+    def from_buffer(cls, buffer):
+        ins = cls()
+        ins.unpack(buffer)
+        return ins
+
 
     @abstractproperty
     def m(self):
@@ -68,7 +85,7 @@ class BaseStructure(VirtualStructure):
     def build(self, method, *args, **kwargs):
         self.set_process_attribute(method, *args, **kwargs)
         self.m.clear()
-        self.structure()
+        self.structure(*self.s.args, **self.s.kwargs)
         self.set_process_attribute(None)
 
     def process_attribute(self, key, val):
@@ -184,20 +201,15 @@ class BaseStructure(VirtualStructure):
     #     return self.str_struct()
 
     def __mul__(self, other):
-        return StructureList([type(self).from_values(self.structured_values) for _ in range(int(other))])
+        return StructureList([type(self).from_values(**dict(self.structured_values)) for _ in range(int(other))])
 
     def __rmul__(self, other):
-        return StructureList([type(self).from_values(self.structured_values) for _ in range(int(other))])
+        return StructureList([type(self).from_values(**dict(self.structured_values)) for _ in range(int(other))])
 
 
 class DynamicClass(DescriptorDictClass, BaseStructure):
     __slots__ = ()
 
-    @classmethod
-    def from_values(cls, values):
-        ins = cls()
-        ins.set_values(values)
-        return ins
 
 class StructureClass(DescriptorDictClass, BaseStructure):
     __slots__ = ()
@@ -208,18 +220,6 @@ class StructureClass(DescriptorDictClass, BaseStructure):
             self.process_attribute(key, val)
         self.set_process_attribute(None)
 
-    @classmethod
-    def from_values(cls, *args, **kwargs):
-        ins = cls()
-        if args:
-            ins.set_values(args)
-        elif kwargs:
-            ins.set_values(kwargs)
-        return ins
-
-    @classmethod
-    def from_list(cls, fields, size=None):
-        cls()
 
 
 class StructureList(DescriptorList, BaseStructure):
@@ -233,15 +233,6 @@ class StructureList(DescriptorList, BaseStructure):
         for key, val in self.m.items():
             self.process_attribute(key, val)
         self.set_process_attribute(None)
-
-    @classmethod
-    def from_values(cls, *args, **kwargs):
-        ins = cls()
-        if args:
-            ins.set_values(args)
-        elif kwargs:
-            ins.set_values(kwargs)
-        return ins
 
     def __init__(self, seq=None, data_type=None, max_size=None):
         if seq is not None:
@@ -300,16 +291,16 @@ class StructureSelector(VirtualStructure):
         return self.internal_value.slave_pack()
 
     def slave_unpack(self, key, buffer_wrapper):
-        self.internal_value = self.structure()
+        self.internal_value = self.structure(*self.args, **self.kwargs)
         return self.internal_value.slave_unpack(key, buffer_wrapper)
 
     def slave_set_values(self, key, value_wrapper):
-        self.internal_value = self.structure()
+        self.internal_value = self.structure(*self.args, **self.kwargs)
         #return self.internal_value._unpack(key, value_wrapper)
 
     def set_parent(self, parent):
         self.parent = parent
-        self.internal_value = self.structure()
+        self.internal_value = self.structure(*self.args, **self.kwargs)
 
     def get_parent(self):
         try:

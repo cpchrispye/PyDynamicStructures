@@ -143,13 +143,9 @@ class EItem(DynamicClass):
 
 
 class EPATH_List(DynamicList):
-    def __init__(self, *args, **kwargs):
-        self.args = args
-        self.kwargs = kwargs
-        self.internal_value = None
 
-    def structure(self):
-        max_size = self.get_variable(self.args[0])
+    def structure(self, size_path):
+        max_size = self.get_variable(size_path)
         current_size = 0
         while current_size < max_size:
             self.append(EItem())
