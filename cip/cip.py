@@ -1,8 +1,10 @@
 import socket
-from PyDynamicStructures import *
-from ctypes import Structure, c_uint16, c_uint32, c_uint64, addressof, memmove, create_string_buffer
+
 from enum import IntEnum
-from Examples.cip_types import EPATH, EPATH_Selector, EPATH_List, EItem, SegmentType, LogicalFormat, LogicalType
+
+from PyDynamicStructures import *
+from cip_types import *
+
 
 
 class ENIPCommandCode(IntEnum):
@@ -241,37 +243,6 @@ class MessageRouterResponce(StructureClass):
         self.additional_status = Array(length_path='../additional_size', type=UINT16)
         self.data = RAW_END()
 
-
-class CIP(object):
-
-    def __init__(self, ip_address, port=0xAF12):
-        self.enip = ENIP(ip_address, port)
-
-
-    def send_encap(self, service, class_id=None, instance_id=None, attribute_id=None, data=None, route=None):
-
-        message = MessageRouter()
-        message.service = service
-        if class_id is not None:
-            message.epath.append(EItem(SegmentType.LogicalSegment, LogicalType.ClassID, LogicalFormat.bit_8, class_id))
-        if instance_id is not None:
-            message.epath.append(EItem(SegmentType.LogicalSegment, LogicalType.InstanceID, LogicalFormat.bit_8, instance_id))
-        if attribute_id is not None:
-            message.epath.append(EItem(SegmentType.LogicalSegment, LogicalType.AttributeID, LogicalFormat.bit_8, attribute_id))
-        if data is not None:
-            message.data = data
-
-        message.path_size = message.epath.struct_size() // 2
-
-        receipt = self.enip.send_enip(message.pack())
-        rsp = self.enip.read(receipt)
-        rsp_struct = MessageRouterResponce()
-        rsp_struct.unpack(rsp)
-
-        if rsp_struct.general_status != 0:
-            raise Exception('CIP ERROR general status %d' % rsp_struct.general_status)
-        return rsp_struct.data
-
 class EmbeddedMessageSelector(StructureSelector):
     def structure(self):
         size = self.get_variable(self.kwargs['request_size'])
@@ -291,32 +262,90 @@ class ConnectionManager(DynamicClass):
         self.reserved = UINT8()
         self.route_path = EPATH_List('../route_size')
 
+
+def build_ucmm_message(service, class_id=None, instance_id=None, attribute_id=None, data=None):
+    message = MessageRouter()
+    message.service = service
+    if class_id is not None:
+        message.epath.append(EItem(SegmentType.LogicalSegment, LogicalType.ClassID, LogicalFormat.bit_8, class_id))
+    if instance_id is not None:
+        message.epath.append(
+            EItem(SegmentType.LogicalSegment, LogicalType.InstanceID, LogicalFormat.bit_8, instance_id))
+    if attribute_id is not None:
+        message.epath.append(
+            EItem(SegmentType.LogicalSegment, LogicalType.AttributeID, LogicalFormat.bit_8, attribute_id))
+    if data is not None:
+        message.data = data
+    message.path_size = message.epath.struct_size() // 2
+    return message
+
+
+class CIP(object):
+
+    def __init__(self, path, port=0xAF12):
+        items = path.split('/')
+        ip_address = items.pop(0)
+
+        self.route = []
+        while len(items) >= 2:
+            self.route.append(items[:2])
+            items = items[2:]
+
+        self.enip = ENIP(ip_address, port)
+
+
+    def send_encap(self, service, class_id=None, instance_id=None, attribute_id=None, data=None):
+
+        if self.route:
+            cm = ConnectionManager(priority=100,
+                                   ticks=100)
+
+            cm.message_request.service = 0x0e
+            cm.message_request = build_ucmm_message(service, class_id, instance_id, attribute_id, data)
+            cm.request_size = cm.message_request.struct_size()
+
+            for port in self.route:
+                cm.route_path.append(EItem(SegmentType.PortSegment, 0, int(port[0]), int(port[1])))
+            cm.route_size = cm.route_path.struct_size() // 2
+
+            message = build_ucmm_message(0x52, 6, 1, data=cm)
+        else:
+            message = build_ucmm_message(service, class_id, instance_id, attribute_id, data)
+
+        receipt = self.enip.send_enip(message.pack())
+        rsp = self.enip.read(receipt)
+        rsp_struct = MessageRouterResponce()
+        rsp_struct.unpack(rsp)
+
+        if rsp_struct.general_status != 0:
+            raise Exception('CIP ERROR general status %d' % rsp_struct.general_status)
+        return rsp_struct.data
+
+class IndentiyObject(StructureClass):
+    def structure(self):
+        self.vendor_id = UINT16_L()
+        self.device_type = UINT16_L()
+        self.product_code = UINT16_L()
+        self.major_rev = UINT8_L()
+        self.minor_rev = UINT8_L()
+        self.status = UINT16_L()
+        self.serial_number = UINT32_L()
+        self.product_name = short_string_cip()
+
+
+
 if __name__ == '__main__':
     # from psttools.utils.bootp import BootpServer
     # bp = BootpServer()
     # bp.set_device('00-A0-EC-44-9B-2E', "192.168.0.15", '255.255.255.0')
     # bp.start()
 
-    con = CIP("192.168.0.25")
-    print(con.send_encap(0x0e, 1, 1, 7))
-    cm = ConnectionManager(priority=100,
-                            ticks=100)
-
-    cm.message_request.service = 0x0e
-    cm.message_request.epath.append(EItem(SegmentType.LogicalSegment, LogicalType.ClassID, LogicalFormat.bit_8, 1))
-    cm.message_request.epath.append(EItem(SegmentType.LogicalSegment, LogicalType.InstanceID, LogicalFormat.bit_8, 1))
-    cm.message_request.epath.append(EItem(SegmentType.LogicalSegment, LogicalType.AttributeID, LogicalFormat.bit_8, 7))
-    cm.message_request.path_size = cm.message_request.epath.struct_size() // 2
-    cm.request_size = cm.message_request.struct_size()
-
-    cm.route_path.append(EItem(SegmentType.PortSegment, 0, 1, 0))
-    cm.route_size = cm.route_path.struct_size() // 2
-
-    rsp = con.send_encap(0x52, 6, 1, data=cm.pack())
-    print(rsp)
-
-
-
+    con = CIP("192.168.0.25/1/0")
+    rsp = con.send_encap(0x01, 1, 1)
+    id = IndentiyObject()
+    id.unpack(rsp)
+    print(id.product_name)
 
 
     # bp.stop()
+    i=1

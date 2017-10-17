@@ -2,22 +2,60 @@ import socket
 from PyDynamicStructures import *
 from enum import IntEnum
 
-__all__ = ["octet_cip", "byte_cip", "bool_cip", "sint_cip", "int_cip", "dint_cip", "lint_cip", "usint_cip", "uint_cip", "udint_cip", "ulint_cip", "word_cip", "dword_cip", "lword_cip", "EPATH", "EPATH_Selector"]
+__all__ = ["octet_cip", "byte_cip", "bool_cip", "sint_cip", "int_cip", "dint_cip", "lint_cip", "usint_cip",
+           "uint_cip", "udint_cip", "ulint_cip", "word_cip", "dword_cip", "lword_cip", "EPATH", "EItem", "EPATH_List",
+           "short_string_cip", "string_cip", "string2_cip",
+           "CommonServices", "SegmentType", "LogicalType", "LogicalFormat", "DataSubType"]
 
-octet_cip   =BYTE
-byte_cip    =BYTE
-bool_cip    =BYTE
-sint_cip    =INT8
-int_cip     =INT16
-dint_cip    =INT32
-lint_cip    =INT64
-usint_cip   =UINT8
-uint_cip    =UINT16
-udint_cip   =UINT32
-ulint_cip   =UINT64
-word_cip    =UINT16
-dword_cip   =UINT32
-lword_cip   =UINT64
+octet_cip   = BYTE_L
+byte_cip    = BYTE_L
+bool_cip    = BYTE_L
+sint_cip    = INT8_L
+int_cip     = INT16_L
+dint_cip    = INT32_L
+lint_cip    = INT64_L
+usint_cip   = UINT8_L
+uint_cip    = UINT16_L
+udint_cip   = UINT32_L
+ulint_cip   = UINT64_L
+word_cip    = UINT16_L
+dword_cip   = UINT32_L
+lword_cip   = UINT64_L
+
+class base_string_cip(DynamicClass):
+    _encoding_size_ = 1
+    _encoding_ = 'ISO-8859-1'
+    _length_type_ = usint_cip
+
+    def _getter_(self, *args):
+        return self.value.decode(self._encoding_)
+
+    def _setter_(self, instance, value):
+        self.string_size = len(value)
+        self.value = value.encode(self._encoding_)
+
+    def structure(self):
+        self.string_size = self._length_type_()
+        self.value = RAW(length=self.string_size * self._encoding_size_)
+
+class short_string_cip(base_string_cip):
+    _encoding_size_ = 1
+    _encoding_ = 'ISO-8859-1'
+    _length_type_ = usint_cip
+
+class string_cip(base_string_cip):
+    _encoding_size_ = 1
+    _encoding_ = 'ISO-8859-1'
+    _length_type_ = uint_cip
+
+class string2_cip(base_string_cip):
+    _encoding_size_ = 2
+    _encoding_ = 'ISO-10646'
+    _length_type_ = uint_cip
+
+class CommonServices(IntEnum):
+    get_all    = 0x01
+    get_single = 0x0e
 
 class SegmentType(IntEnum):
 
@@ -121,12 +159,12 @@ class EPATH_List(DynamicList):
             raise Exception("EPATH Size mismatch should be %d not %d" % (self.size(), current_size))
 
 
-class EPATH_Selector(StructureSelector):
-    def structure(self):
-        size = self.get_variable(self.args[0])
-        epath = EPATH_List()
-        epath.set_size(size*2)
-        return epath
+# class EPATH_Selector(StructureSelector):
+#     def structure(self):
+#         size = self.get_variable(self.args[0])
+#         epath = EPATH_List()
+#         epath.set_size(size*2)
+#         return epath
 
 
 class EPATH(DynamicClass):
