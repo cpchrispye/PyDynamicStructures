@@ -2,7 +2,7 @@ import socket
 from PyDynamicStructures import *
 from ctypes import Structure, c_uint16, c_uint32, c_uint64, addressof, memmove, create_string_buffer
 from enum import IntEnum
-from Examples.cip_types import EPATH, EPATH_Selector, EItem, SegmentType, LogicalFormat, LogicalType
+from Examples.cip_types import EPATH, EPATH_Selector, EPATH_List, EItem, SegmentType, LogicalFormat, LogicalType
 
 
 class ENIPCommandCode(IntEnum):
@@ -229,7 +229,7 @@ class MessageRouter(StructureClass):
     def structure(self):
         self.service = UINT8()
         self.path_size = UINT8()
-        self.epath = EPATH_Selector('../path_size')
+        self.epath = EPATH_List('../path_size')
         self.data  = RAW_END()
 
 class MessageRouterResponce(StructureClass):
@@ -279,16 +279,17 @@ class EmbeddedMessageSelector(StructureSelector):
         message.set_size(size)
         return message
 
-class ConnectionManager(StructureClass):
+class ConnectionManager(DynamicClass):
     def structure(self):
         self.priority = UINT8()
         self.ticks = UINT8()
         self.request_size = UINT16_L()
         self.message_request = EmbeddedMessageSelector(request_size='../request_size')
-        self.pad = PADD()
+        if self.size() % 2:
+            self.pad = PADD()
         self.route_size = UINT8()
         self.reserved = UINT8()
-        self.route_path = EPATH_Selector('../request_size')
+        self.route_path = EPATH_List('../route_size')
 
 if __name__ == '__main__':
     # from psttools.utils.bootp import BootpServer
@@ -312,6 +313,7 @@ if __name__ == '__main__':
     cm.route_size = cm.route_path.struct_size() // 2
 
     rsp = con.send_encap(0x52, 6, 1, data=cm.pack())
+    print(rsp)
 
 
 

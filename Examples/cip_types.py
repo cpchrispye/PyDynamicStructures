@@ -105,14 +105,20 @@ class EItem(DynamicClass):
 
 
 class EPATH_List(DynamicList):
-    def structure(self):
-        my_size = 0
-        while self.size() > my_size:
-            self.append(EItem())
-            my_size += self[-1].size()
+    def __init__(self, *args, **kwargs):
+        self.args = args
+        self.kwargs = kwargs
+        self.internal_value = None
 
-        if self.size() != my_size:
-            raise Exception("EPATH Size mismatch should be %d not %d" % (self.size(), my_size))
+    def structure(self):
+        max_size = self.get_variable(self.args[0])
+        current_size = 0
+        while current_size < max_size:
+            self.append(EItem())
+            current_size += self[-1].size()
+
+        if max_size != current_size:
+            raise Exception("EPATH Size mismatch should be %d not %d" % (self.size(), current_size))
 
 
 class EPATH_Selector(StructureSelector):
@@ -126,4 +132,4 @@ class EPATH_Selector(StructureSelector):
 class EPATH(DynamicClass):
     def structure(self):
         self.epath_size = uint_cip()
-        self.epath = EPATH_Selector('../epath_size')
+        self.epath = EPATH_List('../epath_size')
