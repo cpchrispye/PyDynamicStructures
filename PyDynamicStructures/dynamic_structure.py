@@ -138,13 +138,10 @@ class BaseStructure(VirtualStructure):
     def slave_unpack(self, key, buffer_wrapper):
         self.build('slave_unpack', buffer_wrapper)
 
-    def slave_set_values(self, key, value_wrapper):
-        if isinstance(value_wrapper, MasterValues):
-            self.build('slave_set_values', value_wrapper)
-        elif isinstance(value_wrapper, (dict, OrderedDict)):
-            self.build('slave_set_values', value_wrapper.get(key, {}))
-        else:
-            raise Exception('values must be a list or a dict not %s' % value_wrapper.values.__class__.__name__)
+    def slave_set_values(self, key, values):
+        val = get_values(key, values)
+        if val is not None:
+            self.build('slave_set_values', val)
 
     def set_parent(self, parent):
         self.s.parent = parent

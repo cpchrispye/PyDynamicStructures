@@ -38,6 +38,12 @@ class base_string_cip(DynamicClass):
         self.string_size = self._length_type_()
         self.value = RAW(length=self.string_size * self._encoding_size_)
 
+    def __str__(self):
+        return self._getter_()
+
+    def __repr__(self):
+        return self.__str__()
+
 class short_string_cip(base_string_cip):
     _encoding_size_ = 1
     _encoding_ = 'ISO-8859-1'

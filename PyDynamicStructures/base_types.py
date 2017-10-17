@@ -1,6 +1,6 @@
 from .dynamic_structure import VirtualStructure, StructureList
 from .descriptors import DescriptorItem
-from .utils import MasterValues, MasterBuffer, int_to_bits, int_to_byte
+from .utils import MasterValues, MasterBuffer, int_to_bits, int_to_byte, get_values
 from struct import pack, unpack, calcsize
 from collections import OrderedDict
 
@@ -68,14 +68,10 @@ class BaseType(VirtualStructure, DescriptorItem):
     def _rebuild(self, key):
         pass
 
-    def slave_set_values(self, key, value_wrapper):
-        if isinstance(value_wrapper, MasterValues):
-            if value_wrapper.offset < len(value_wrapper.values):
-                self.internal_value = value_wrapper.values[value_wrapper.offset]
-                value_wrapper.offset += 1
-        elif isinstance(value_wrapper, (dict, OrderedDict)):
-            if key in value_wrapper:
-                self.internal_value = value_wrapper[key]
+    def slave_set_values(self, key, value):
+        val = get_values(key, value, base_type=True)
+        if val is not None:
+            self.internal_value = val
 
     def set_parent(self, parent):
         self.parent = parent
@@ -364,13 +360,10 @@ class BitElement(BaseType):
     def _rebuild(self, key):
         pass
 
-    def slave_set_values(self, key, value_wrapper):
-        if isinstance(value_wrapper, MasterValues):
-            self.internal_value = value_wrapper.values[value_wrapper.offset]
-            value_wrapper.offset += 1
-        elif isinstance(value_wrapper, (dict, OrderedDict)):
-            if key in value_wrapper:
-                self.internal_value = value_wrapper[key]
+    def slave_set_values(self, key, values):
+        val = get_values(key, values, base_type=True)
+        if val is not None:
+            self.internal_value = val
 
     # def __mul__(self, other):
     #     return StructureList([type(self).from_values(self.internal_value) for _ in range(int(other))])

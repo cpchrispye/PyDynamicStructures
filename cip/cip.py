@@ -269,15 +269,15 @@ def build_ucmm_message(service, class_id=None, instance_id=None, attribute_id=No
     message = MessageRouter()
     message.service = service
     if class_id is not None:
-        message.epath.append(EItem(SegmentType.LogicalSegment, LogicalType.ClassID, LogicalFormat.bit_8, class_id))
+        message.epath.append(EItem.from_values(SegmentType.LogicalSegment, LogicalType.ClassID, LogicalFormat.bit_8, class_id))
     if instance_id is not None:
-        message.epath.append(
-            EItem(SegmentType.LogicalSegment, LogicalType.InstanceID, LogicalFormat.bit_8, instance_id))
+        message.epath.append(EItem.from_values(SegmentType.LogicalSegment, LogicalType.InstanceID, LogicalFormat.bit_8, instance_id))
     if attribute_id is not None:
-        message.epath.append(
-            EItem(SegmentType.LogicalSegment, LogicalType.AttributeID, LogicalFormat.bit_8, attribute_id))
+        message.epath.append(EItem.from_values(SegmentType.LogicalSegment, LogicalType.AttributeID, LogicalFormat.bit_8, attribute_id))
+
     if data is not None:
         message.data = data
+
     message.path_size = message.epath.struct_size() // 2
     return message
 
@@ -342,10 +342,9 @@ if __name__ == '__main__':
     # bp.set_device('00-A0-EC-44-9B-2E', "192.168.0.15", '255.255.255.0')
     # bp.start()
 
-    con = CIP("192.168.0.25/1/0")
+    con = CIP("192.168.0.115")
     rsp = con.send_encap(0x01, 1, 1)
-    id = IndentiyObject()
-    id.unpack(rsp)
+    id = IndentiyObject.from_buffer(rsp)
     print(id.product_name)
 
 

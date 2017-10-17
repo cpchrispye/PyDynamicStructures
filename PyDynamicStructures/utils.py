@@ -1,5 +1,5 @@
 import math
-from collections import namedtuple
+from collections import namedtuple, OrderedDict
 
 
 class MasterBuffer(object):
@@ -16,10 +16,34 @@ class MasterByte(object):
         self.bit_size = bit_size
 
 class MasterValues(object):
-    def __init__(self, val=None, off=None, bit_off=None):
+    def __init__(self, val=None, off=0):
         self.values=val
         self.offset=off
-        self.bit_offset=bit_off
+
+def get_values(key, values, base_type=False):
+    if values is None:
+        return None
+    if isinstance(values, MasterValues):
+        if values.offset >= len(values.values):
+            return None
+        output = values.values[values.offset]
+        # base types can only take a single value no lists allowed
+        if base_type:
+            if isinstance(output, (list, tuple)):
+                raise Exception('base types cannot take list or tuple')
+            values.offset += 1
+            return output
+        else:
+            #structure types can take nested sequences
+            if isinstance(output, (list, tuple)):
+                values.offset += 1
+                return MasterValues(output, 0)
+            else:# otherwise send on master values un touched
+                return values
+    elif isinstance(values, (dict, OrderedDict)):
+        return values.get(key, dict())
+
+    raise Exception('Set values error attribute %s invalid type %s' %(str(key), type(values).__name__()))
 
 
 def sizeof(struct):
