@@ -152,13 +152,14 @@ class EPATH_List(DynamicList):
 
     def structure(self, size_path):
         max_size = self.get_variable(size_path)
-        current_size = 0
-        while current_size < max_size:
-            self.append(EItem())
-            current_size += self[-1].size()
+        if max_size is not None:
+            current_size = 0
+            while current_size < max_size:
+                self.append(EItem())
+                current_size += self[-1].size()
 
-        if max_size != current_size:
-            raise Exception("EPATH Size mismatch should be %d not %d" % (self.size(), current_size))
+            if max_size != current_size:
+                raise Exception("EPATH Size mismatch should be %d not %d" % (self.size(), current_size))
 
 
 # class EPATH_Selector(StructureSelector):

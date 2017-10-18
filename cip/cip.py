@@ -307,7 +307,7 @@ class CIP(object):
             cm.request_size = cm.message_request.struct_size()
 
             for port in self.route:
-                cm.route_path.append(EItem(SegmentType.PortSegment, 0, int(port[0]), int(port[1])))
+                cm.route_path.append(EItem.from_values(SegmentType.PortSegment, 0, int(port[0]), int(port[1])))
             cm.route_size = cm.route_path.struct_size() // 2
 
             message = build_ucmm_message(0x52, 6, 1, data=cm)
@@ -342,7 +342,7 @@ if __name__ == '__main__':
     # bp.set_device('00-A0-EC-44-9B-2E', "192.168.0.15", '255.255.255.0')
     # bp.start()
 
-    con = CIP("192.168.0.115")
+    con = CIP("192.168.0.25/1/0")
     rsp = con.send_encap(0x01, 1, 1)
     id = IndentiyObject.from_buffer(rsp)
     print(id.product_name)

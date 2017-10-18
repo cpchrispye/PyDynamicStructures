@@ -39,13 +39,15 @@ class BaseStructure(VirtualStructure):
     __metaclass__ = ABCMeta
     __slots__ = ()
 
-    def __init__(self, st_size=None, *args,  **kwargs):
+    def __init__(self, *args , **kwargs):
+        st_size = kwargs.get('st_size')
         self.s.args = args
         self.s.kwargs = kwargs
         if hasattr(self, '_size_'):
             self.set_size(self._size_)
         elif st_size is not None:
             self.set_size(st_size)
+            del kwargs['st_size']
         else:
             self.structure(*self.s.args, **self.s.kwargs)
 

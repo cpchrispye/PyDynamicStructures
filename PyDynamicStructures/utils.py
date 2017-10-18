@@ -41,7 +41,7 @@ def get_values(key, values, base_type=False):
             else:# otherwise send on master values un touched
                 return values
     elif isinstance(values, (dict, OrderedDict)):
-        return values.get(key, dict())
+        return values.get(key, None)
 
     raise Exception('Set values error attribute %s invalid type %s' %(str(key), type(values).__name__()))
 
@@ -71,7 +71,7 @@ def get_variable(current_object, path):
         for attr_name in start_path:
             this_dir = getattr(this_dir, attr_name)
     except AttributeError as e:
-        raise AttributeError("Cannot find dir %s %s: message %s" % (attr_name, path, str(e)))
+        return None #raise AttributeError("Cannot find dir %s %s: message %s" % (attr_name, path, str(e)))
     return this_dir
 
 def bit_size_in_bytes(size):
