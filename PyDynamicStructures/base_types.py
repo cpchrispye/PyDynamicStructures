@@ -138,6 +138,9 @@ class PADD(EMPTY):
     def slave_pack(self):
         return int_to_byte(0)
 
+    def size(self):
+        return 1
+
 
 class RAW(BaseType):
     BASEFORMAT = ''

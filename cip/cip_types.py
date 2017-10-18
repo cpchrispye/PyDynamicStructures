@@ -1,5 +1,6 @@
 import socket
 from PyDynamicStructures import *
+from PyDynamicStructures.utils import get_values
 from enum import IntEnum
 
 __all__ = ["octet_cip", "byte_cip", "bool_cip", "sint_cip", "int_cip", "dint_cip", "lint_cip", "usint_cip",
@@ -32,11 +33,17 @@ class base_string_cip(DynamicClass):
 
     def _setter_(self, instance, value):
         self.string_size = len(value)
-        self.value = value.encode(self._encoding_)
+        self.value = RAW(value.encode(self._encoding_), self.string_size * self._encoding_size_)
+
 
     def structure(self):
         self.string_size = self._length_type_()
         self.value = RAW(length=self.string_size * self._encoding_size_)
+
+    def slave_set_values(self, key, value):
+        val = get_values(key, value, base_type=True)
+        if val is not None:
+            self._setter_(None, val)
 
     def __str__(self):
         return self._getter_()
@@ -60,8 +67,9 @@ class string2_cip(base_string_cip):
     _length_type_ = uint_cip
 
 class CommonServices(IntEnum):
-    get_all    = 0x01
     get_single = 0x0e
+    get_all    = 0x01
+
 
 class SegmentType(IntEnum):
 
@@ -123,7 +131,13 @@ class EHead(BitStructure):
         else:
             raise Exception('epath seg type not supported')
 
+class StringFormat(BitStructureL):
+    def structure(self):
+        self.string_size = BitElement(5)
+        self.format = BitElement(3)
+
 class EItem(DynamicClass):
+    _padded_=False
 
     def structure(self):
         self.type = EHead()
@@ -134,6 +148,8 @@ class EItem(DynamicClass):
             if self.type.extended:
                 self.address_size = UINT8()
                 self.link_address = UINT8() * self.address_size
+                if self._padded_ and self.address_size > 1:
+                    self.padd = PADD()
             else:
                 self.link_address = UINT8()
 
@@ -142,10 +158,39 @@ class EItem(DynamicClass):
                 self.extended_logical = BYTE()
             if self.type.format == LogicalFormat.bit_8:
                 self.value = UINT8_L()
+                if self._padded_ and self.extended_logical:
+                    self.padd = PADD()
             elif self.type.format == LogicalFormat.bit_16:
                 self.value = UINT16_L()
             elif self.type.format == LogicalFormat.bit_132:
                 self.value = UINT32_L()
+
+        elif self.type.logical == SegmentType.NetworkSegment:
+            raise Exception('not supported')
+
+        elif self.type.logical == SegmentType.SymbolicSegment:
+            if self.type.sym_size == 0:
+                self.extened_format = StringFormat()
+                raise Exception('not supported')
+
+        elif self.type.logical == SegmentType.DataSegment:
+            if self.type.sub_type == 0:
+                self.data_size = UINT8_L()
+                self.data = DynamicRaw('../data_size')
+            elif self.type.sub_type == 0x11:
+                self.data = short_string_cip()
+                if len(self.data) % 2:
+                    self.padd = PADD()
+
+
+
+
+
+
+
+
+class EItemPadded(DynamicClass):
+    _padded_ = True
 
 
 class EPATH_List(DynamicList):

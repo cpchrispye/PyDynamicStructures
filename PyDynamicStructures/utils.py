@@ -1,6 +1,6 @@
 import math
 from collections import namedtuple, OrderedDict
-
+import struct
 
 class MasterBuffer(object):
     def __init__(self, buf=None, off=0):
@@ -83,7 +83,7 @@ def byte_to_int(char):
     return ord(char)
 
 def int_to_byte(val):
-    return chr(val).encode()
+    return struct.pack("B", val)
 
 def bytes_to_int(buffer, size, offset=0, lendian=True):
     buf_cut = buffer[offset:offset + size]
