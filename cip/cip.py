@@ -5,6 +5,7 @@ from enum import IntEnum
 from PyDynamicStructures import *
 from cip_types import *
 from enip import ENIP
+import re
 
 class MessageRouter(StructureClass):
     def structure(self):
@@ -121,6 +122,58 @@ class CIP(object):
 
         return self.send_encap(service, epath, data)
 
+    def get_variable(self, name, qty=1):
+        attribute_names = name.split('.')
+        epath = []
+        for name in attribute_names:
+            arrayed = name.split('[')
+            name = arrayed[0]
+            epath.append(EItem.from_values(SegmentType.DataSegment, 0x11, name))
+            for index in arrayed[1:]:
+                index = index.replace(']', '')
+                index = int(index)
+                epath.append(EItem.from_values(SegmentType.LogicalSegment, LogicalType.MemberID, LogicalFormat.bit_8, index))
+
+        size = uint_cip(qty)
+        rsp = self.send_encap(0x4c, epath, size)
+        val = VariableResponse.from_buffer(rsp)
+        return val.value
+
+
+class VariableSelector(StructureSelector):
+    DATATYPES = {
+        0xC1: bool_cip,
+        0xC2: sint_cip,
+        0xC3: int_cip,
+        0xC4: dint_cip,
+        0xC5: lint_cip,
+
+        0xC6: usint_cip,
+        0xC7: uint_cip,
+        0xC8: udint_cip,
+        0xC9: ulint_cip,
+
+        0xCA: FLOAT_L,
+        0xCB: DOUBLE_L,
+
+        0xD1: byte_cip,
+        0xD2: word_cip,
+        0xD3: dword_cip,
+        0xD4: lword_cip,
+    }
+
+    def structure(self, data_type_path):
+        data_type = self.get_variable(data_type_path)
+        obj = self.DATATYPES.get(data_type, 0)
+        if obj == 0:
+            return EMPTY()
+        return obj()
+
+class VariableResponse(StructureClass):
+    def structure(self):
+        self.data_type = uint_cip()
+        self.value = VariableSelector('../data_type')
+
 
 class IndentiyObject(StructureClass):
     def structure(self):
@@ -136,25 +189,13 @@ class IndentiyObject(StructureClass):
 
 
 if __name__ == '__main__':
-    # from psttools.utils.bootp import BootpServer
-    # bp = BootpServer()
-    # bp.set_device('00-A0-EC-44-9B-2E', "192.168.0.15", '255.255.255.0')
-    # bp.start()
 
     con = CIP("192.168.0.25/1/0")
     rsp = con.send_class_encap(CommonServices.get_all, 1, 1)
     id = IndentiyObject.from_buffer(rsp)
     print(id.product_name)
 
-    epath = []
-    epath.append(EItem.from_values(SegmentType.DataSegment, 0x11, 'Local:5:O'))
-    epath.append(EItem.from_values(SegmentType.DataSegment, 0x11, 'Ch'))
-    epath.append(EItem.from_values(SegmentType.LogicalSegment, LogicalType.MemberID, LogicalFormat.bit_8, 0))
-    epath.append(EItem.from_values(SegmentType.DataSegment, 0x11, 'Data'))
-    data = dint_cip(01)
-
-    val = con.send_encap(0x4c, epath, data)
-
+    val = con.get_variable('Local:5:O.Ch[0].Data')
 
     # bp.stop()
     i=1

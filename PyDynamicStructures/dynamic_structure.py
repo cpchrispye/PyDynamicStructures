@@ -333,6 +333,9 @@ class StructureSelector(VirtualStructure):
         return None
 
     def _getter_(self, instance):
+
+        if hasattr(self.internal_value, '_getter_'):
+            return self.internal_value._getter_(self)
         return self.internal_value
 
 
