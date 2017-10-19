@@ -3,18 +3,18 @@ from abc import ABCMeta, abstractmethod
 GETTER  = '_getter_'
 SETTER  = '_setter_'
 REPLACE = '_replace_'
+DESCRIPTOR_FRAME_WORK = '_descriptor_fw_'
 
 
-class DescriptorItem(object):
+class Descriptor(object):
     __metaclass__ = ABCMeta
-    __slots__ = ()
-    _replace_ = True
+
     @abstractmethod
-    def _getter_(self, instance):
+    def _getter_(self, name):
         pass
 
     @abstractmethod
-    def _setter_(self, instance, value):
+    def _setter_(self, name, val):
         pass
 
     @classmethod
@@ -23,90 +23,41 @@ class DescriptorItem(object):
             return True
         return NotImplemented
 
-class DictStore(MutableMapping):
+    def __repr__(self):
+        return str(self._getter_(None))
+
+
+class DictStore(OrderedDict):
 
     def __init__(self, *args, **kwargs):
-        self._store_ = OrderedDict(*args, **kwargs)
-
-    def __getitem__(self, item):
-        return self._store_.__getitem__(item)
-
-    def __setitem__(self, key, value):
-        self._store_.__setitem__(key, value)
-
-    def __delitem__(self, key):
-        self._store_.__delitem__(key)
+        object.__setattr__(self, '_DictStore__setup_complete', False)
+        super(DictStore, self).__init__(*args, **kwargs)
+        self.__setup_complete = True
 
     def __getattr__(self, item):
-        if item == '_store_':
-            return super(DictStore, self).__getattr__(item)
-        return self._store_.__getitem__(item)
+        if self.__setup_complete == True:
+            return self.__getitem__(item)
+        return object.__getattr__(self, item)
 
-    def __setattr__(self, key, value):
-        if key == '_store_':
-            super(DictStore, self).__setattr__(key, value)
+    def __setattr__(self, key, item):
+        if self.__setup_complete == False:
+            object.__setattr__(self, key, item)
         else:
-            self._store_.__setitem__(key, value)
+            self.__setitem__(key, item)
 
-    def __delattr__(self, item):
-        self._store_.__delitem__(item)
-
-    def __len__(self):
-        return self._store_.__len__()
-
-    def __iter__(self):
-        return self._store_.__iter__()
-
-    def getattr(self, item):
+    def getitem(self, item):
         try:
             return self.__getitem__(item)
         except KeyError:
             raise AttributeError()
 
-    def get(self,item, default=None):
-        if item in self:
-            return self.getattr(item)
-        return default
-
-    def setattr(self, key, value):
+    def setitem(self, key, value):
         self.__setitem__(key, value)
 
 
-class ListStore(MutableSequence):
+class ListStore(list):
 
-    def __init__(self, *args, **kwargs):
-        self._store_ = list(*args, **kwargs)
-
-    def __getitem__(self, item):
-        return self._store_.__getitem__(item)
-
-    def __setitem__(self, key, value):
-        self._store_.__setitem__(key, value)
-
-    def __delitem__(self, key):
-        self._store_.__delitem__(key)
-
-    def __getattr__(self, item):
-        if item == '_store_':
-            return super(ListStore, self).__getattr__(item)
-        return self._store_.__getitem__(item)
-
-    def __setattr__(self, key, value):
-        if key == '_store_':
-            super(ListStore, self).__setattr__(key, value)
-        else:
-            self._store_.__setitem__(key, value)
-
-    def __delattr__(self, item):
-        self._store_.__delitem__(item)
-
-    def __len__(self):
-        return self._store_.__len__()
-
-    def insert(self, index, value):
-        self._store_.insert(index, value)
-
-    def getattr(self, item):
+    def getitem(self, item):
         try:
             return self.__getitem__(item)
         except KeyError:
@@ -117,7 +68,7 @@ class ListStore(MutableSequence):
             return self.getattr(item)
         return default
 
-    def setattr(self, key, value):
+    def setitem(self, key, value):
         self.__setitem__(key, value)
 
     def keys(self):
@@ -132,145 +83,104 @@ class ListStore(MutableSequence):
     def clear(self):
         del self[:]
 
-class StateDict(object):
 
-    def __init__(self):
-        self.store = DictStore()
-        self.set_visitor = None
-
-
-class DescriptorClass(object):
-    __slots__ = ('_state_')
-    _replace_ = True
+class DescriptorBase(object):
+    __slots__ = ('_store_')
+    _state_type_ = None
 
     @property
     def m(self):
-        return self._state_.store
+        return self._store_
 
-    @property
-    def s(self):
-        return self._state_
-
-    def __getattr__(self, item):
-        if item == '_state_':
-            super(DescriptorClass, self).__setattr__('_state_', StateDict())
-            return self._state_
+    def _set_hook_(self, key, value):
         try:
-            found_item = self.m.getattr(item)
-        except KeyError:
+            return super(DescriptorBase, self)._set_hook_(key, value)
+        except AttributeError:
+            pass
+        return True
+
+    def _des_getattr_(self, key):
+        if key == '_store_':
+            store = self._state_type_()
+            object.__setattr__(self, '_store_', store)
+            return store
+        try:
+            found_item = self.m.getitem(key)
+        except Exception:
             raise AttributeError()
         if hasattr(found_item, GETTER):
             return getattr(found_item, GETTER)(self)
         return found_item
 
-    def __setattr__(self, key, value):
-        last_value = self.m.get(key)
-        if (hasattr(last_value, GETTER) and not hasattr(value, REPLACE)):
-            getattr(last_value, SETTER)(self, value)
+    def _des_setattr_(self, key, value):
+        if key not in self._store_:
+            if self._set_hook_(key, value):
+                self._store_.setitem(key, value)
+            else:
+                super(DescriptorBase, self).__setattr__(key, value)
         else:
-            if hasattr(self, '_set_hook_'):
-                self._set_hook_(key, value)
-            self.m.setattr(key, value)
+            current_val = self._store_.getitem(key)
+            if hasattr(current_val, SETTER):
+                getattr(current_val, SETTER)(key, value)
+                return
+            self._store_[key] = value
 
 
-class DescriptorDict(MutableMapping, object):
+class DescriptorClass(DescriptorBase):
     #__slots__ = ('_state_')
-    _replace_ = True
-
-    @property
-    def m(self):
-        return self._state_.store
-
-    @property
-    def s(self):
-        return self._state_
+    _state_type_ = DictStore
 
     def __getattr__(self, item):
-        if item == '_state_':
-            super(DescriptorDict, self).__setattr__('_state_', ListStore())
-            return self._state_
-        raise AttributeError()
+        return self._des_getattr_(item)
+
+    def __setattr__(self, key, value):
+        self._des_setattr_(key, value)
+
+
+class DescriptorDict(MutableMapping, DescriptorBase):
+    #__slots__ = ('_state_')
+    _state_type_ = DictStore
 
     def __getitem__(self, item):
-        try:
-            item = self.m.getattr(item)
-        except KeyError:
-            raise AttributeError()
-        if hasattr(item, GETTER):
-            return getattr(item, GETTER)(self)
-        return item
+        return self._des_getattr_(item)
 
     def __setitem__(self, key, value):
-        last_value = self.m.get(key)
-        if (hasattr(last_value, GETTER) and not hasattr(value, REPLACE)):
-            getattr(last_value, SETTER)(self, value)
-        else:
-            if hasattr(self, '_set_hook_'):
-                self._set_hook_(key, value)
-            self.m.setattr(key, value)
+        self._des_setattr_(key, value)
 
     def __delitem__(self, key):
         self.m.__delitem__(key)
         
     def __len__(self):
-        return self._state_._store_.__len__()
+        return self.m.__len__()
 
     def __iter__(self):
-        self._state_._store_.__iter__()
+        self.m.__iter__()
 
 
 class DescriptorDictClass(DescriptorClass, DescriptorDict):
-    __slots__ = ()
+    #__slots__ = ()
     pass
 
 
-class StateList(object):
-    def __init__(self):
-        self.store = ListStore()
-        self.set_visitor = None
+class DescriptorList(MutableSequence, DescriptorBase):
+    #__slots__ = ('_state_')
+    _state_type_ = ListStore
 
-
-class DescriptorList(MutableSequence, object):
-    __slots__ = ('_state_')
-    _replace_ = True
-
-    @property
-    def m(self):
-        return self._state_.store
-
-    @property
-    def s(self):
-        return self._state_
-
-    def __getattr__(self, item):
-        if item == '_state_':
-            super(DescriptorList, self).__setattr__('_state_', StateList())
-            return self._state_
-        raise AttributeError()
+    def __init__(self, *args, **kwargs):
+        self._store_ = self._state_type_()
+        super(DescriptorList, self).__init__(*args, **kwargs)
 
     def __getitem__(self, item):
-        try:
-            item = self.m.getattr(item)
-        except KeyError:
-            raise KeyError()
-        if hasattr(item, GETTER):
-            return getattr(item, GETTER)(self)
-        return item
+        return self._des_getattr_(item)
 
     def __setitem__(self, key, value):
-        last_value = self.m.get(key)
-        if (hasattr(last_value, GETTER) and not hasattr(value, REPLACE)):
-            getattr(last_value, SETTER)(self, value)
-        else:
-            if hasattr(self, '_set_hook_'):
-                self._set_hook_(key, value)
-            self.m.setattr(key, value)
+        self._des_setattr_(key, value)
 
     def __delitem__(self, key):
         self.m.__delitem__(key)
 
     def __len__(self):
-        return self._state_.store.__len__()
+        return self.m.__len__()
 
     def insert(self, key, value):
         if hasattr(self, '_set_hook_'):

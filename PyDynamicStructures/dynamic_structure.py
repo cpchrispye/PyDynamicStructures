@@ -3,12 +3,13 @@ from abc import ABCMeta, abstractmethod, abstractproperty
 from .utils import *
 from collections import OrderedDict, Mapping
 from copy import copy
+from weakref import ref
 
 __all__ = ['DynamicClass', 'StructureClass', 'StructureList', 'DynamicList', 'StructureSelector', 'BitStructure', 'BitStructureL']
 
 class VirtualStructure(object):
     __metaclass__ = ABCMeta
-    __slots__ = ()
+    #__slots__ = ()
 
     @abstractproperty
     def structured_values(self):
@@ -37,19 +38,19 @@ class VirtualStructure(object):
 
 class BaseStructure(VirtualStructure):
     __metaclass__ = ABCMeta
-    __slots__ = ()
+    #__slots__ = ('st_args', 'st_kwargs', 'st_set_method', 'st_buffer_cache', 'st_parent', 'st_byte_size')
 
     def __init__(self, *args , **kwargs):
         st_size = kwargs.get('st_size')
-        self.s.args = args
-        self.s.kwargs = kwargs
+        self.st_args = args
+        self.st_kwargs = kwargs
         if hasattr(self, '_size_'):
             self.set_size(self._size_)
         elif st_size is not None:
             self.set_size(st_size)
             del kwargs['st_size']
         else:
-            self.structure(*self.s.args, **self.s.kwargs)
+            self.structure(*self.st_args, **self.st_kwargs)
 
     @classmethod
     def from_values(cls, *args, **kwargs):
@@ -71,36 +72,33 @@ class BaseStructure(VirtualStructure):
     def m(self):
         pass
 
-    @abstractproperty
-    def s(self):
-        pass
-
     @abstractmethod
     def structure(self):
         pass
 
     def _set_hook_(self, key, value):
-        if not isinstance(value, VirtualStructure):
-            raise Exception("Only subclasses of VirtualStructure allowed to be set")
-        self.process_attribute(key, value)
+        if isinstance(value, VirtualStructure):
+            self.process_attribute(key, value)
+            return True
+        return False
 
     def build(self, method, *args, **kwargs):
         self.set_process_attribute(method, *args, **kwargs)
         self.m.clear()
-        self.structure(*self.s.args, **self.s.kwargs)
+        self.structure(*self.st_args, **self.st_kwargs)
         self.set_process_attribute(None)
 
     def process_attribute(self, key, val):
         val.set_parent(self)
-        if hasattr(self.s, 'set_method') and self.s.set_method is not None:
-            method, args, kwargs = self.s.set_method
+        if hasattr(self, 'st_set_method') and self.st_set_method is not None:
+            method, args, kwargs = self.st_set_method
             getattr(val, method)(key, *args, **kwargs)
 
     def set_process_attribute(self, method, *args, **kwargs):
         if method is None:
-            self.s.set_method = None
+            self.st_set_method = None
         else:
-            self.s.set_method = (method, args, kwargs)
+            self.st_set_method = (method, args, kwargs)
 
     @property
     def structured_values(self):
@@ -115,9 +113,9 @@ class BaseStructure(VirtualStructure):
     def unpack(self, buffer=None):
         if buffer is not None:
             mbuffer = MasterBuffer(buffer, 0)
-            self.s.buffer_cache = copy(mbuffer)
+            self.st_buffer_cache = copy(mbuffer)
         else:
-            mbuffer = copy(self.s.buffer_cache)
+            mbuffer = copy(self.st_buffer_cache)
         result = self.build('slave_unpack', mbuffer)
 
     def rebuild(self):
@@ -146,11 +144,11 @@ class BaseStructure(VirtualStructure):
             self.build('slave_set_values', val)
 
     def set_parent(self, parent):
-        self.s.parent = parent
+        self.st_parent = ref(parent)
 
     def get_parent(self):
         try:
-            return self.s.parent
+            return self.st_parent()
         except AttributeError:
             return None
 
@@ -167,7 +165,7 @@ class BaseStructure(VirtualStructure):
         return get_variable(self, path)
 
     def set_size(self, byte_size):
-        self.s.byte_size = byte_size
+        self.st_byte_size = byte_size
 
     def size(self):
         s = self.fixed_size()
@@ -182,8 +180,8 @@ class BaseStructure(VirtualStructure):
         return size
 
     def fixed_size(self):
-        if hasattr(self.s, 'byte_size'):
-            return self.s.byte_size
+        if hasattr(self, 'st_byte_size'):
+            return self.st_byte_size
         return None
 
     def __repr__(self):
@@ -207,11 +205,12 @@ class BaseStructure(VirtualStructure):
 
 
 class DynamicClass(DescriptorDictClass, BaseStructure):
-    __slots__ = ()
+    pass
+    #__slots__ = ()
 
 
 class StructureClass(DescriptorDictClass, BaseStructure):
-    __slots__ = ()
+    #__slots__ = ()
 
     def build(self, method, *args, **kwargs):
         self.set_process_attribute(method, *args, **kwargs)
@@ -224,6 +223,17 @@ class StructureClass(DescriptorDictClass, BaseStructure):
 class StructureList(DescriptorList, BaseStructure):
     __slots__ = ()
 
+    def __init__(self, seq=None, data_type=None, max_size=None):
+        super(StructureList, self).__init__()
+        if seq is not None:
+            for i in seq:
+                self.append(i)
+            return
+
+        if data_type is not None and max_size is not None:
+            self.st_data_type = data_type
+            self.st_max_size = max_size
+
     def structure(self):
         pass
 
@@ -233,22 +243,13 @@ class StructureList(DescriptorList, BaseStructure):
             self.process_attribute(key, val)
         self.set_process_attribute(None)
 
-    def __init__(self, seq=None, data_type=None, max_size=None):
-        if seq is not None:
-            for i in seq:
-                self.append(i)
-            return
-
-        if data_type is not None and max_size is not None:
-            self.s.data_type = data_type
-            self.s.max_size = max_size
-
     @property
     def structured_values(self):
         out = list()
         for val in self.m:
             out.append(val.structured_values)
         return out
+
 
 class DynamicList(DescriptorList, BaseStructure):
     __slots__ = ()
@@ -362,9 +363,9 @@ class BitStructure(DynamicClass):
     def unpack(self, buffer=None):
         if buffer is not None:
             mbuffer = MasterBuffer(buffer, 0)
-            self.s.buffer_cache = copy(mbuffer)
+            self.st_buffer_cache = copy(mbuffer)
         else:
-            mbuffer = copy(self.s.buffer_cache)
+            mbuffer = copy(self.st_buffer_cache)
         self.slave_unpack(None, mbuffer)
 
     def slave_unpack(self, key, buffer_wrapper):
@@ -374,7 +375,7 @@ class BitStructure(DynamicClass):
         buffer_wrapper.offset += size
 
     def set_size(self, byte_size):
-        self.s.byte_size = byte_size
+        self.st_byte_size = byte_size
 
     def size(self):
         s = self.fixed_size()
@@ -389,19 +390,10 @@ class BitStructure(DynamicClass):
         return bit_size_in_bytes(size)
 
     def fixed_size(self):
-        if hasattr(self.s, 'byte_size'):
-            return self.s.byte_size
+        if hasattr(self, 'st_byte_size'):
+            return self.st_byte_size
         return None
 
 class BitStructureL(BitStructure):
     LENDIAN = True
 
-
-if __name__ =='__main__':
-    class enip(StructureClass):
-        pass
-    a = StructureClass()
-    a.fred = enip()
-    m = a.m
-
-    i=1

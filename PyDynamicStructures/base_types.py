@@ -1,5 +1,5 @@
 from .dynamic_structure import VirtualStructure, StructureList
-from .descriptors import DescriptorItem
+from .descriptors import Descriptor
 from .utils import MasterValues, MasterBuffer, int_to_bits, int_to_byte, get_values
 from struct import pack, unpack, calcsize
 from collections import OrderedDict
@@ -14,7 +14,7 @@ class BaseTypeError(Exception):
         message = "object path = %s: message = %s" % (path, message)
         super(BaseTypeError, self).__init__(message)
 
-class BaseType(VirtualStructure, DescriptorItem):
+class BaseType(VirtualStructure, Descriptor):
     __slots__    = ('internal_value', 'buffer', 'buffer_offset', 'parent')
     BASEFORMAT   = None
     DEFAULTVALUE = 0
