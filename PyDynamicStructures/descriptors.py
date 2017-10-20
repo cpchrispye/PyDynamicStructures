@@ -119,11 +119,14 @@ class DescriptorBase(object):
             else:
                 super(DescriptorBase, self).__setattr__(key, value)
         else:
-            current_val = self._store_.getitem(key)
-            if hasattr(current_val, SETTER):
-                getattr(current_val, SETTER)(key, value)
-                return
-            self._store_[key] = value
+            if self._set_hook_(key, value):
+                self._store_.setitem(key, value)
+            else:
+                current_val = self._store_.getitem(key)
+                if hasattr(current_val, SETTER) and not hasattr(value, GETTER):
+                    getattr(current_val, SETTER)(key, value)
+                    return
+                self._store_[key] = value
 
 
 class DescriptorClass(DescriptorBase):

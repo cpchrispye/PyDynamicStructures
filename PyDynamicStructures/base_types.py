@@ -26,6 +26,7 @@ class BaseType(VirtualStructure, Descriptor):
         return ins
 
     def __init__(self, value=None):
+        self.cached_format = self.BASEENDIAN + self.BASEFORMAT
         self.internal_value = value
         if self.internal_value is None:
             self.internal_value = self.DEFAULTVALUE
@@ -42,7 +43,7 @@ class BaseType(VirtualStructure, Descriptor):
 
     def slave_pack(self):
         try:
-            return pack(self.BASEENDIAN + self.BASEFORMAT, self.internal_value)
+            return pack(self.cached_format, self.internal_value)
         except Exception as e:
             raise BaseTypeError(self, "pack error value %s, message: %s" % (str(self.internal_value), str(e)))
 
@@ -57,7 +58,7 @@ class BaseType(VirtualStructure, Descriptor):
 
         try:
             size = self.size()
-            vals = unpack(self.BASEENDIAN + self.BASEFORMAT, self.buffer.buffer[self.buffer.offset:self.buffer.offset + size])
+            vals = unpack(self.cached_format, self.buffer.buffer[self.buffer.offset:self.buffer.offset + size])
         except Exception as e:
             raise BaseTypeError(self, "unpack error value %s, message: %s" % (str(self.internal_value), str(e)))
 
@@ -87,6 +88,9 @@ class BaseType(VirtualStructure, Descriptor):
         if parent is None:
             return [self]
         return parent.get_parents() + [self]
+
+    def st_format(self):
+        return [(self.BASEENDIAN, self.BASEFORMAT),]
 
     def size(self):
         return calcsize(self.BASEFORMAT)

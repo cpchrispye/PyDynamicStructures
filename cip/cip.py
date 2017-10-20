@@ -189,14 +189,10 @@ class IndentiyObject(StructureClass):
 
 
 if __name__ == '__main__':
-
+    import time
     id = IndentiyObject()
 
-    con = CIP("192.168.0.115")
+    con = CIP("192.168.0.55")
+
     rsp = con.send_class_encap(CommonServices.get_all, 1, 1)
     id = IndentiyObject.from_buffer(rsp)
-    print(id.product_name)
-
-    #val = con.get_variable('Local:5:O.Ch[0].Data')
-
-    i=1

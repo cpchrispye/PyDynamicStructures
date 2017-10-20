@@ -164,6 +164,12 @@ class BaseStructure(VirtualStructure):
     def get_variable(self, path):
         return get_variable(self, path)
 
+    def st_format(self):
+        format = []
+        for val in self.m.values():
+            format += val.st_format()
+        return format
+
     def set_size(self, byte_size):
         self.st_byte_size = byte_size
 
