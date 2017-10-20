@@ -302,6 +302,7 @@ class StructureSelector(VirtualStructure):
 
     def slave_set_values(self, key, value_wrapper):
         self.internal_value = self.structure(*self.args, **self.kwargs)
+        self.internal_value.slave_set_values(key, value_wrapper)
         #return self.internal_value._unpack(key, value_wrapper)
 
     def set_parent(self, parent):

@@ -86,6 +86,7 @@ class ListStore(list):
 
 class DescriptorBase(object):
     __slots__ = ('_store_')
+    _attribute_error_ = None
     _state_type_ = None
 
     @property
@@ -107,7 +108,7 @@ class DescriptorBase(object):
         try:
             found_item = self.m.getitem(key)
         except Exception:
-            raise AttributeError()
+            raise self._attribute_error_()
         if hasattr(found_item, GETTER):
             return getattr(found_item, GETTER)(self)
         return found_item
@@ -132,6 +133,7 @@ class DescriptorBase(object):
 class DescriptorClass(DescriptorBase):
     #__slots__ = ('_state_')
     _state_type_ = DictStore
+    _attribute_error_ = AttributeError
 
     def __getattr__(self, item):
         return self._des_getattr_(item)
@@ -143,6 +145,7 @@ class DescriptorClass(DescriptorBase):
 class DescriptorDict(MutableMapping, DescriptorBase):
     #__slots__ = ('_state_')
     _state_type_ = DictStore
+    _attribute_error_ = KeyError
 
     def __getitem__(self, item):
         return self._des_getattr_(item)
@@ -168,6 +171,7 @@ class DescriptorDictClass(DescriptorClass, DescriptorDict):
 class DescriptorList(MutableSequence, DescriptorBase):
     #__slots__ = ('_state_')
     _state_type_ = ListStore
+    _attribute_error_ = IndexError
 
     def __init__(self, *args, **kwargs):
         self._store_ = self._state_type_()

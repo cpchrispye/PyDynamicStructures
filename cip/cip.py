@@ -60,6 +60,20 @@ def build_ucmm_message(service, class_id=None, instance_id=None, attribute_id=No
     return message
 
 
+def variable_to_epath(variable_name):
+    attribute_names = variable_name.split('.')
+    epath = []
+    for name in attribute_names:
+        arrayed = name.split('[')
+        name = arrayed[0]
+        epath.append(EItem.from_values(SegmentType.DataSegment, 0x11, name))
+        for index in arrayed[1:]:
+            index = index.replace(']', '')
+            index = int(index)
+            epath.append(
+                EItem.from_values(SegmentType.LogicalSegment, LogicalType.MemberID, LogicalFormat.bit_8, index))
+    return StructureList(epath)
+
 class CIP(object):
 
     def __init__(self, path, port=0xAF12):
@@ -122,21 +136,21 @@ class CIP(object):
 
         return self.send_encap(service, epath, data)
 
-    def get_variable(self, name, qty=1):
-        attribute_names = name.split('.')
-        epath = []
-        for name in attribute_names:
-            arrayed = name.split('[')
-            name = arrayed[0]
-            epath.append(EItem.from_values(SegmentType.DataSegment, 0x11, name))
-            for index in arrayed[1:]:
-                index = index.replace(']', '')
-                index = int(index)
-                epath.append(EItem.from_values(SegmentType.LogicalSegment, LogicalType.MemberID, LogicalFormat.bit_8, index))
+    def set_variable(self, name, value, data_type_code=None):
+        epath = variable_to_epath(name)
+        if data_type_code is None:
+            rsp = self.send_encap(0x4c, epath, uint_cip(1))
+            val = CIPVariableGetRspFrame.from_buffer(rsp)
+            data_type_code = val.data_type
 
+        output = CIPVariableSetSendFrame.from_values(data_type=data_type_code, length=1, value=value)
+        rsp = self.send_encap(0x4d, epath, output)
+
+    def get_variable(self, name, qty=1):
+        epath = variable_to_epath(name)
         size = uint_cip(qty)
         rsp = self.send_encap(0x4c, epath, size)
-        val = VariableResponse.from_buffer(rsp)
+        val = CIPVariableGetRspFrame.from_buffer(rsp)
         return val.value
 
 
@@ -162,17 +176,26 @@ class VariableSelector(StructureSelector):
         0xD4: lword_cip,
     }
 
-    def structure(self, data_type_path):
+    def structure(self, data_type_path, length_path=None):
         data_type = self.get_variable(data_type_path)
         obj = self.DATATYPES.get(data_type, 0)
         if obj == 0:
             return EMPTY()
+        if length_path is not None and self.get_variable(length_path) > 1:
+            return obj() * self.get_variable(length_path)
         return obj()
 
-class VariableResponse(StructureClass):
+
+class CIPVariableGetRspFrame(StructureClass):
     def structure(self):
         self.data_type = uint_cip()
         self.value = VariableSelector('../data_type')
+
+class CIPVariableSetSendFrame(StructureClass):
+    def structure(self):
+        self.data_type = uint_cip()
+        self.length = uint_cip()
+        self.value = VariableSelector('../data_type', length_path='../length')
 
 
 class IndentiyObject(StructureClass):
@@ -192,7 +215,10 @@ if __name__ == '__main__':
     import time
     id = IndentiyObject()
 
-    con = CIP("192.168.0.55")
+    con = CIP("192.168.0.25/1/0")
+    val = con.get_variable('Local:5:O.Ch[0].Data')
+    val = con.set_variable('Local:5:O.Ch[0].Data', 3.0)
 
     rsp = con.send_class_encap(CommonServices.get_all, 1, 1)
     id = IndentiyObject.from_buffer(rsp)
+    print(id.product_name)

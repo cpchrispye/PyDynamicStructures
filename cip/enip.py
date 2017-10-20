@@ -212,15 +212,23 @@ class ENIP(object):
         encap_packet = ENIPEncapsulationHeader()
         payload = self.sock.recv(sizeof(encap_packet))
         encap_packet.unpack(payload)
-        payload += self.sock.recv(encap_packet.length)
 
-        encap_packet = ENIPEncapsulationPacket()
-        encap_packet.unpack(payload)
+        if encap_packet.length > 0:
+            payload += self.sock.recv(encap_packet.length)
 
+            encap_packet = ENIPEncapsulationPacket()
+            encap_packet.unpack(payload)
+
+        if encap_packet.status != 0:
+            raise Exception('Enip Error %d' % encap_packet.status)
 
         if encap_packet.sender_context != 0:
             self.packets[encap_packet.sender_context] = encap_packet
 
         if full_packet:
             return encap_packet
-        return encap_packet.command_specific.cpf.item[1].data
+
+        if encap_packet.length > 0:
+            return encap_packet.command_specific.cpf.item[1].data
+
+        return None
